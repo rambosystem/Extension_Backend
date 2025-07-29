@@ -23,7 +23,7 @@ app.add_middleware(
 )
 
 # 注册路由
-app.include_router(user.router)  # 暂时注释，等待路由模块实现
+app.include_router(user.router)
 
 # 根路径
 
@@ -54,6 +54,7 @@ async def test_database():
             "error": str(e),
             "error_type": type(e).__name__
         }
+
 # 健康检查端点
 
 
