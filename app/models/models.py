@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, TIMESTAMP, Boolean, ForeignKey, text
+from sqlalchemy import Column, Integer, String, Text, TIMESTAMP, Boolean, ForeignKey, text, BigInteger, DateTime
 from sqlalchemy.orm import relationship
 from app.db.database import Base
 
@@ -34,8 +34,6 @@ class Term(Base):
     en = Column(String(255), nullable=False, comment="英文术语")
     cn = Column(String(255), comment="中文翻译")
     jp = Column(String(255), comment="日文翻译")
-    vector_indexed = Column(Boolean, default=False, comment="是否已建立向量索引")
-    last_indexed_at = Column(TIMESTAMP, nullable=True, comment="最后索引时间")
     created_at = Column(TIMESTAMP, server_default=text(
         "CURRENT_TIMESTAMP"), comment="术语创建时间")
     updated_at = Column(TIMESTAMP, server_default=text(
@@ -44,3 +42,14 @@ class Term(Base):
 
     # 关系映射
     user = relationship("User", back_populates="terms")
+
+
+class Embedding(Base):
+    __tablename__ = "embedding"
+
+    id = Column(BigInteger, primary_key=True,
+                autoincrement=True, comment="主键ID")
+    embedding_status = Column(String(20), nullable=False,
+                              default="pending", comment="embedding状态：building-构建中, success-成功, failed-失败")
+    last_embedding_time = Column(DateTime, nullable=True,
+                                 comment="最后成功构建embedding的时间")

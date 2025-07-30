@@ -41,3 +41,17 @@ class TermsStatusResponse(BaseModel):
     total_terms: int
     embedding_status: Optional[bool] = None
     last_embedding_time: Optional[str] = None
+
+
+class EmbeddingResponse(BaseModel):
+    id: int
+    embedding_status: str
+    last_embedding_time: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class EmbeddingUpdateRequest(BaseModel):
+    embedding_status: str
+    last_embedding_time: Optional[datetime] = None

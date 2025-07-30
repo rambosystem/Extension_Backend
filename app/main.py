@@ -1,0 +1,48 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.config import settings
+from app.api.router import user
+from app.api.router import embedding
+
+# 创建FastAPI应用实例
+app = FastAPI(
+    title="FAISS Vector Search API",
+    description="基于FAISS的向量搜索API",
+    version="1.0.0",
+    debug=settings.DEBUG
+)
+
+# 添加CORS中间件
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 注册路由
+app.include_router(user.router)
+app.include_router(embedding.router)
+
+# 根路径
+
+
+@app.get("/")
+async def root():
+    return {
+        "message": "FAISS Vector Search API is running!",
+        "version": "1.0.0",
+        "docs_url": "/docs"
+    }
+
+# 健康检查端点
+
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "database": "connected",
+        "faiss_engine": "ready"
+    }
