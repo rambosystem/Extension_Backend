@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.models import User, Term
-from app.models.schemas import UserTermsResponse, TermCreate, DeleteTermResponse, DeleteTermsResponse, DeleteTermsRequest
+from app.models.schemas import UserTermsResponse, TermCreate, DeleteTermResponse, DeleteTermsResponse, DeleteTermsRequest, TermsStatusResponse
 from typing import List
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -140,4 +140,31 @@ async def delete_user_terms(user_id: int, request: DeleteTermsRequest, db: Sessi
     return DeleteTermsResponse(
         message="Terms deleted successfully",
         deleted_count=len(terms)
+    )
+
+
+@router.get("/{user_id}/terms/status", response_model=TermsStatusResponse)
+async def get_user_terms_status(user_id: int, db: Session = Depends(get_db)):
+    """获取用户术语状态信息"""
+
+    # 查询用户是否存在
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 查询用户的所有术语
+    terms = db.query(Term).filter(Term.user_id == user_id).all()
+    total_terms = len(terms)
+
+    # 计算embedding状态（暂时留空）
+    embedding_status = True
+    last_embedding_time = "2025-07-30 10:00:00"
+
+    # TODO: 后续实现embedding状态计算逻辑
+    # 可以基于vector_indexed和last_indexed_at字段来计算
+
+    return TermsStatusResponse(
+        total_terms=total_terms,
+        embedding_status=embedding_status,
+        last_embedding_time=last_embedding_time
     )

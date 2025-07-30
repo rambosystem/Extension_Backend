@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import List, Optional
+from datetime import datetime
 
 
 class TermCreate(BaseModel):
@@ -34,3 +35,9 @@ class DeleteTermsRequest(BaseModel):
 class DeleteTermsResponse(BaseModel):
     message: str
     deleted_count: int
+
+
+class TermsStatusResponse(BaseModel):
+    total_terms: int
+    embedding_status: Optional[bool] = None
+    last_embedding_time: Optional[str] = None
