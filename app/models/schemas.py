@@ -20,3 +20,17 @@ class TermResponse(BaseModel):
 class UserTermsResponse(BaseModel):
     terms: List[TermResponse]
     total_terms: int
+
+
+class DeleteTermResponse(BaseModel):
+    message: str
+    term_id: int
+
+
+class DeleteTermsRequest(BaseModel):
+    en_terms: List[str]
+
+
+class DeleteTermsResponse(BaseModel):
+    message: str
+    deleted_count: int
