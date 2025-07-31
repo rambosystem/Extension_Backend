@@ -185,6 +185,9 @@ test.db
 faiss_indexes/
 vector_indexes/
 
+# models
+models/
+
 # Log files
 *.log
 logs/

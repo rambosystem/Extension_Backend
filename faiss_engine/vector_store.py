@@ -135,12 +135,9 @@ class FAISSVectorStore:
                 logger.warning(f"Term {term_id} already exists in index")
                 return False
 
-            # 生成多语言融合嵌入
+            # 生成英文术语嵌入
             embedding = self.embedding_service.create_term_embedding(
                 en, cn, jp)
-
-            # 归一化向量（用于内积搜索）
-            embedding = embedding / np.linalg.norm(embedding)
 
             # 添加到FAISS索引
             embedding = embedding.reshape(1, -1)  # 确保是2D数组
@@ -209,8 +206,6 @@ class FAISSVectorStore:
 
             # 生成查询向量
             query_embedding = self.embedding_service.encode_dense(query)
-            query_embedding = query_embedding / \
-                np.linalg.norm(query_embedding)  # 归一化
             query_embedding = query_embedding.reshape(1, -1)
 
             # 搜索相似向量
@@ -265,10 +260,9 @@ class FAISSVectorStore:
                     if term_id in self.term_id_map:
                         continue
 
-                    # 生成嵌入
+                    # 生成英文术语嵌入
                     embedding = self.embedding_service.create_term_embedding(
                         en, cn, jp)
-                    embedding = embedding / np.linalg.norm(embedding)
                     embedding = embedding.reshape(1, -1)
 
                     # 添加到索引

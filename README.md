@@ -6,7 +6,7 @@
 
 - 🔍 基于FAISS的高效向量相似度搜索
 - 👤 多用户术语管理
-- 🧠 BGE-M3离线嵌入模型
+- 🧠 BGE-Large-EN-v1.5预加载嵌入模型
 - 💾 向量索引持久化
 - 🔄 后台异步embedding构建
 - 🛡️ 构建状态冲突保护
@@ -66,7 +66,7 @@ extension_backend/
 
 - Python 3.8+
 - MySQL 5.7+
-- 已下载的BGE-M3模型文件
+- 预加载的BGE-Large-EN-v1.5模型文件（位于 `./models/bge-large-en-v1.5/`）
 
 ### 安装依赖
 
@@ -86,11 +86,8 @@ DB_USER=root
 DB_PASSWORD=your_password
 DB_NAME=Extension
 
-# 离线模型配置
-TRANSFORMERS_OFFLINE=true
-HF_HUB_OFFLINE=true
-HF_ENDPOINT=https://hf-mirror.com
-MODEL_CACHE_DIR=./model_cache
+# 模型配置
+MODEL_PATH=./models/bge-large-en-v1.5
 
 # FAISS配置
 FAISS_INDEX_PATH=./faiss_indexes
