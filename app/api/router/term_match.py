@@ -30,7 +30,7 @@ def get_term_matcher():
     return term_matcher
 
 
-@router.post("/match", response_model=List[List[TermResponse]])
+@router.post("/match", response_model=List[TermResponse])
 async def match_terms(
     texts: List[str],
     similarity_threshold: float = Query(
@@ -54,7 +54,7 @@ async def match_terms(
         user_id: 限制搜索特定用户的术语（可选）
 
     Returns:
-        匹配结果列表，每个输入文本对应一个术语列表
+        匹配结果列表，所有匹配的术语合并为一个去重的列表
     """
     try:
         # 获取TermMatcher实例
@@ -68,17 +68,18 @@ async def match_terms(
             max_ngram=max_ngram
         )
 
-        # 从数据库获取完整的术语信息
-        all_term_ids = []
+        # 收集所有匹配的term_id并进行去重
+        all_term_ids = set()
         for term_id_list in matched_term_ids:
-            all_term_ids.extend(term_id_list)
+            all_term_ids.update(term_id_list)
 
         if not all_term_ids:
             # 没有匹配结果，返回空列表
-            return [[] for _ in texts]
+            return []
 
         # 查询数据库获取术语详情
-        query_builder = db.query(Term).filter(Term.term_id.in_(all_term_ids))
+        query_builder = db.query(Term).filter(
+            Term.term_id.in_(list(all_term_ids)))
 
         # 如果指定了用户ID，添加用户过滤
         if user_id is not None:
@@ -89,21 +90,25 @@ async def match_terms(
         # 创建term_id到Term对象的映射
         term_map = {term.term_id: term for term in terms}
 
-        # 构建返回结果
-        results = []
-        for term_id_list in matched_term_ids:
-            text_terms = []
-            for term_id in term_id_list:
-                if term_id in term_map:
-                    term = term_map[term_id]
-                    text_terms.append(TermResponse(
-                        en=term.en,
-                        cn=term.cn,
-                        jp=term.jp
-                    ))
-            results.append(text_terms)
+        # 构建返回结果（使用set集合记录term_id，然后转换为术语列表）
+        unique_term_ids = set()
 
-        return results
+        # 收集所有匹配的term_id到set中（自动去重）
+        for term_id_list in matched_term_ids:
+            unique_term_ids.update(term_id_list)
+
+        # 根据去重后的term_id构建术语列表
+        all_unique_terms = []
+        for term_id in unique_term_ids:
+            if term_id in term_map:
+                term = term_map[term_id]
+                all_unique_terms.append(TermResponse(
+                    en=term.en,
+                    cn=term.cn,
+                    jp=term.jp
+                ))
+
+        return all_unique_terms
 
     except Exception as e:
         raise HTTPException(
