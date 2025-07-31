@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.models.models import Term, Embedding
 from app.db.database import SessionLocal
 from faiss_engine.vector_store import FAISSVectorStore
-from faiss_engine.embeddings import BGE_M3EmbeddingService
+from faiss_engine.embeddings import BGE_EmbeddingService
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class EmbeddingService:
     def __init__(self):
         self.vector_store = FAISSVectorStore()
-        self.embedding_model = BGE_M3EmbeddingService()
+        self.embedding_model = BGE_EmbeddingService()
 
     def get_db(self):
         """获取数据库会话"""

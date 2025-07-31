@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api.router import user
 from app.api.router import embedding
+from app.api.router import term_match
 
 # 创建FastAPI应用实例
 app = FastAPI(
@@ -24,6 +25,7 @@ app.add_middleware(
 # 注册路由
 app.include_router(user.router)
 app.include_router(embedding.router)
+app.include_router(term_match.router)
 
 # 根路径
 

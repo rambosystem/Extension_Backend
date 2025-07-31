@@ -5,7 +5,7 @@ import pickle
 import logging
 from typing import List, Tuple, Optional, Dict
 from pathlib import Path
-from .embeddings import BGE_M3EmbeddingService
+from .embeddings import BGE_EmbeddingService
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class FAISSVectorStore:
         self.index = None
         self.term_id_map = {}  # term_id -> index_position 映射
         self.index_term_map = {}  # index_position -> term_id 映射
-        self.embedding_service = BGE_M3EmbeddingService()
+        self.embedding_service = BGE_EmbeddingService()
 
         # 创建索引目录
         self.index_path.mkdir(parents=True, exist_ok=True)

@@ -3,7 +3,7 @@
 # 核心依赖
 faiss-cpu==1.7.4
 sentence-transformers==2.2.2
-nltk==3.8.1
+nltk==3.9.1
 numpy==1.24.3
 
 # 可选依赖（如果有GPU）

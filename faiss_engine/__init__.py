@@ -1,5 +1,5 @@
 # FAISS引擎包初始化文件
-from .embeddings import BGE_M3EmbeddingService
+from .embeddings import BGE_EmbeddingService
 from .vector_store import FAISSVectorStore
 
-__all__ = ["BGE_M3EmbeddingService", "FAISSVectorStore"]
+__all__ = ["BGE_EmbeddingService", "FAISSVectorStore"]

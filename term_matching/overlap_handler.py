@@ -109,7 +109,7 @@ class OverlapHandler:
         # 按N-gram长度降序排列，相同长度按相似度降序排列
         sorted_matches = sorted(
             matches,
-            key=lambda x: (len(x['ngram']), x['similarity']),
+            key=lambda x: (len(x['ngram'].split()), x['similarity']),
             reverse=True
         )
 
@@ -164,7 +164,7 @@ class OverlapHandler:
         # 按长度和相似度排序
         sorted_matches = sorted(
             matches_with_positions,
-            key=lambda x: (len(x['ngram']), x['similarity']),
+            key=lambda x: (len(x['ngram'].split()), x['similarity']),
             reverse=True
         )
 

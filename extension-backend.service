@@ -1,0 +1,53 @@
+[Unit]
+Description=Extension Backend API Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=forking
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/project/extension_backend
+Environment=PATH=/home/ubuntu/project/extension_backend/venv/bin
+Environment=PYTHONPATH=/home/ubuntu/project/extension_backend
+Environment=ENVIRONMENT=production
+
+# 启动命令
+ExecStart=/home/ubuntu/project/extension_backend/venv/bin/gunicorn app.main:app \
+    --config gunicorn.conf.py \
+    --pid /tmp/extension_backend.pid \
+    --daemon
+
+# 停止命令
+ExecStop=/bin/bash /home/ubuntu/project/extension_backend/stop_production.sh
+
+# 重启命令
+ExecReload=/bin/kill -HUP $MAINPID
+
+# PID文件
+PIDFile=/tmp/extension_backend.pid
+
+# 重启策略
+Restart=always
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+# 安全设置
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/extension_backend /tmp /home/ubuntu/project/extension_backend
+
+# 日志设置
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=extension-backend
+
+# 超时设置
+TimeoutStartSec=60
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target 

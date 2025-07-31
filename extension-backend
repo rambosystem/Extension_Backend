@@ -1,0 +1,12 @@
+/var/log/extension_backend/*.log {
+    daily
+    missingok
+    rotate 30
+    compress
+    delaycompress
+    notifempty
+    create 644 ubuntu ubuntu
+    postrotate
+        systemctl reload extension-backend.service > /dev/null 2>&1 || true
+    endscript
+} 

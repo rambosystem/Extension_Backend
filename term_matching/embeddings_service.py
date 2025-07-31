@@ -8,20 +8,28 @@ logger = logging.getLogger(__name__)
 
 
 class BGE_Large_EN_EmbeddingService:
-    def __init__(self, model_path: str = "./models/bge-large-en-v1.5"):
+    def __init__(self, model_path: str = None):
         """
         初始化BGE-Large-EN嵌入服务（使用预加载模型）
 
         Args:
-            model_path: 预加载的BGE-Large-EN模型路径
+            model_path: 预加载的BGE-Large-EN模型路径（可选）
         """
-        self.model_path = model_path
+        if model_path is None:
+            # 使用默认路径
+            base_dir = os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__)))
+            self.model_path = os.path.join(
+                base_dir, "models", "bge-large-en-v1.5")
+        else:
+            self.model_path = model_path
+
         self.model = None
         self.embedding_dim = 1024  # BGE-Large-EN的嵌入维度
 
         # 确保模型路径存在
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Model path not found: {model_path}")
+        if not os.path.exists(self.model_path):
+            raise FileNotFoundError(f"Model path not found: {self.model_path}")
 
         self._load_model()
 
@@ -86,5 +94,5 @@ class BGE_Large_EN_EmbeddingService:
         return embedding[0].astype(np.float32)  # 返回单个文本的embedding
 
 
-# 通用BGE嵌入服务类名
+# 为了保持向后兼容，保留原来的类名作为别名
 BGE_EmbeddingService = BGE_Large_EN_EmbeddingService
