@@ -77,10 +77,20 @@ class FAISSVectorStore:
 
             # 加载ID映射
             with open(mapping_file, 'rb') as f:
-                self.term_id_map = pickle.load(f)
+                mapping_data = pickle.load(f)
 
-            # 重建反向映射
-            self.index_term_map = {v: k for k, v in self.term_id_map.items()}
+            # 处理映射数据格式（兼容新旧格式）
+            if isinstance(mapping_data, dict) and 'term_id_to_index' in mapping_data:
+                # 新格式
+                self.term_id_map = mapping_data['term_id_to_index']
+                self.index_term_map = mapping_data['index_to_term_id']
+                if 'embedding_dim' in mapping_data:
+                    self.embedding_dim = mapping_data['embedding_dim']
+            else:
+                # 旧格式
+                self.term_id_map = mapping_data
+                self.index_term_map = {v: k for k,
+                                       v in self.term_id_map.items()}
 
             logger.info(f"Loaded FAISS index with {self.index.ntotal} vectors")
 
@@ -98,9 +108,15 @@ class FAISSVectorStore:
             # 保存FAISS索引
             faiss.write_index(self.index, str(index_file))
 
-            # 保存ID映射
+            # 保存ID映射（新格式）
+            mapping_data = {
+                'term_id_to_index': self.term_id_map,
+                'index_to_term_id': self.index_term_map,
+                'embedding_dim': self.embedding_dim
+            }
+
             with open(mapping_file, 'wb') as f:
-                pickle.dump(self.term_id_map, f)
+                pickle.dump(mapping_data, f)
 
             logger.info("FAISS index saved successfully")
 
