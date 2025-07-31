@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.models import User, Term, Embedding
-from app.models.schemas import UserTermsResponse, TermCreate, DeleteTermResponse, DeleteTermsResponse, DeleteTermsRequest, TermsStatusResponse, EmbeddingResponse, EmbeddingUpdateRequest
+from app.models.schemas import UserTermsResponse, TermCreate, DeleteTermResponse, DeleteTermsResponse, DeleteTermsRequest, TermsStatusResponse, EmbeddingStatusResponse, EmbeddingUpdateRequest
 from typing import List
 from datetime import datetime
 
@@ -23,8 +23,6 @@ async def get_user_terms(user_id: int, db: Session = Depends(get_db)):
         Term.term_id.desc()).all()
 
     return UserTermsResponse(
-        user_id=user.user_id,
-        username=user.username,
         terms=terms,
         total_terms=len(terms)
     )
@@ -72,8 +70,6 @@ async def create_user_terms(user_id: int, terms: List[TermCreate], db: Session =
         db.refresh(term)
 
     return UserTermsResponse(
-        user_id=user.user_id,
-        username=user.username,
         terms=created_terms,
         total_terms=len(created_terms)
     )
@@ -157,69 +153,6 @@ async def get_user_terms_status(user_id: int, db: Session = Depends(get_db)):
     terms = db.query(Term).filter(Term.user_id == user_id).all()
     total_terms = len(terms)
 
-    # 查询embedding状态
-    embedding_record = db.query(Embedding).first()
-
-    if embedding_record:
-        embedding_status = embedding_record.embedding_status == "success"
-        last_embedding_time = embedding_record.last_embedding_time.isoformat(
-        ) if embedding_record.last_embedding_time else None
-    else:
-        embedding_status = False
-        last_embedding_time = None
-
     return TermsStatusResponse(
-        total_terms=total_terms,
-        embedding_status=embedding_status,
-        last_embedding_time=last_embedding_time
-    )
-
-
-@router.get("/embedding/status", response_model=EmbeddingResponse)
-async def get_embedding_status(db: Session = Depends(get_db)):
-    """获取embedding状态"""
-
-    embedding_record = db.query(Embedding).first()
-
-    if not embedding_record:
-        # 如果没有记录，创建一个默认记录
-        embedding_record = Embedding(
-            embedding_status="pending"
-        )
-        db.add(embedding_record)
-        db.commit()
-        db.refresh(embedding_record)
-
-    return EmbeddingResponse(
-        id=embedding_record.id,
-        embedding_status=embedding_record.embedding_status,
-        last_embedding_time=embedding_record.last_embedding_time
-    )
-
-
-@router.put("/embedding/status", response_model=EmbeddingResponse)
-async def update_embedding_status(request: EmbeddingUpdateRequest, db: Session = Depends(get_db)):
-    """更新embedding状态"""
-
-    embedding_record = db.query(Embedding).first()
-
-    if not embedding_record:
-        # 如果没有记录，创建一个新记录
-        embedding_record = Embedding()
-        db.add(embedding_record)
-
-    # 更新状态
-    embedding_record.embedding_status = request.embedding_status
-
-    # 如果状态是success，更新最后成功时间
-    if request.embedding_status == "success":
-        embedding_record.last_embedding_time = request.last_embedding_time or datetime.now()
-
-    db.commit()
-    db.refresh(embedding_record)
-
-    return EmbeddingResponse(
-        id=embedding_record.id,
-        embedding_status=embedding_record.embedding_status,
-        last_embedding_time=embedding_record.last_embedding_time
+        total_terms=total_terms
     )
