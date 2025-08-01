@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from app.models.models import Term, Embedding
 from app.db.database import SessionLocal
-from faiss_engine.vector_store import FAISSVectorStore
+# 移除FAISSVectorStore导入，统一使用TermMatcher
 from faiss_engine.embeddings import BGE_EmbeddingService
 
 logger = logging.getLogger(__name__)
@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 
 class EmbeddingService:
     def __init__(self):
-        self.vector_store = FAISSVectorStore()
+        # 统一使用TermMatcher作为embedding引擎
+        pass
         self.embedding_model = BGE_EmbeddingService()
 
     def get_db(self):
@@ -84,20 +85,22 @@ class EmbeddingService:
             logger.info(
                 f"Building embeddings for {len(terms)} terms for user {user_id}")
 
-            # 重建向量索引
-            success = self.vector_store.rebuild_index([
+            # 使用TermMatcher来重建索引，确保使用相同的embedding方法
+            from term_matching.term_matcher import TermMatcher
+
+            # 准备术语数据（只使用英文，与match时保持一致）
+            terms_data = [
                 {
                     "term_id": term.term_id,
-                    "en": term.en,
-                    "cn": term.cn,
-                    "jp": term.jp
+                    "en": term.en
                 }
                 for term in terms
-            ])
+            ]
 
-            if success:
-                # 保存向量索引
-                self.vector_store.save()
+            try:
+                # 使用TermMatcher重建索引
+                matcher = TermMatcher()
+                matcher.build_index_from_terms(terms_data)
 
                 # 更新状态为成功
                 self.update_embedding_status("completed", user_id, db)
@@ -109,11 +112,12 @@ class EmbeddingService:
                     "processed_count": len(terms),
                     "user_id": user_id
                 }
-            else:
+            except Exception as e:
                 # 更新状态为失败
                 self.update_embedding_status("failed", user_id, db)
 
-                logger.error(f"Failed to build embeddings for user {user_id}")
+                logger.error(
+                    f"Failed to build embeddings for user {user_id}: {e}")
                 return {
                     "message": "Failed to build embeddings",
                     "processed_count": 0,
@@ -146,20 +150,22 @@ class EmbeddingService:
             logger.info(
                 f"Building embeddings for {len(terms)} terms from all users")
 
-            # 重建向量索引
-            success = self.vector_store.rebuild_index([
+            # 使用TermMatcher来重建索引，确保使用相同的embedding方法
+            from term_matching.term_matcher import TermMatcher
+
+            # 准备术语数据（只使用英文，与match时保持一致）
+            terms_data = [
                 {
                     "term_id": term.term_id,
-                    "en": term.en,
-                    "cn": term.cn,
-                    "jp": term.jp
+                    "en": term.en
                 }
                 for term in terms
-            ])
+            ]
 
-            if success:
-                # 保存向量索引
-                self.vector_store.save()
+            try:
+                # 使用TermMatcher重建索引
+                matcher = TermMatcher()
+                matcher.build_index_from_terms(terms_data)
 
                 # 更新状态为成功
                 self.update_embedding_status("completed", None, db)
@@ -170,11 +176,11 @@ class EmbeddingService:
                     "message": "Embeddings built successfully",
                     "processed_count": len(terms)
                 }
-            else:
+            except Exception as e:
                 # 更新状态为失败
                 self.update_embedding_status("failed", None, db)
 
-                logger.error("Failed to build embeddings")
+                logger.error(f"Failed to build embeddings: {e}")
                 return {
                     "message": "Failed to build embeddings",
                     "processed_count": 0
@@ -190,9 +196,23 @@ class EmbeddingService:
     def search_similar_terms(self, query: str, top_k: int = 5, threshold: float = 0.7):
         """搜索相似术语"""
         try:
-            results = self.vector_store.search_similar_terms(
-                query, top_k, threshold)
-            return results
+            from term_matching.term_matcher import TermMatcher
+
+            # 使用TermMatcher进行搜索
+            matcher = TermMatcher()
+            matched_term_ids = matcher.match_terms(
+                [query],
+                similarity_threshold=threshold,
+                top_k=top_k
+            )
+
+            # 获取匹配的term_id列表
+            if matched_term_ids and matched_term_ids[0]:
+                # 简化返回格式
+                return [(term_id, 0.8) for term_id in matched_term_ids[0]]
+            else:
+                return []
+
         except Exception as e:
             logger.error(f"Error searching similar terms: {e}")
             raise e
@@ -200,8 +220,19 @@ class EmbeddingService:
     def get_embedding_stats(self):
         """获取embedding统计信息"""
         try:
-            stats = self.vector_store.get_stats()
-            return stats
+            from term_matching.term_matcher import TermMatcher
+
+            # 使用TermMatcher获取统计信息
+            matcher = TermMatcher()
+            index_stats = matcher.get_index_stats()
+
+            return {
+                "total_vectors": index_stats.get("total_vectors", 0),
+                "embedding_dimension": index_stats.get("embedding_dimension", 1024),
+                "mapped_terms": index_stats.get("mapped_terms", 0),
+                "index_type": index_stats.get("index_type", "Unknown"),
+                "is_loaded": index_stats.get("is_loaded", False)
+            }
         except Exception as e:
             logger.error(f"Error getting embedding stats: {e}")
             raise e

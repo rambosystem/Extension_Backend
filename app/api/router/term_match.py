@@ -123,15 +123,87 @@ async def get_term_match_stats():
     try:
         matcher = get_term_matcher()
         stats = matcher.get_stats()
+        index_stats = matcher.get_index_stats()
 
         return {
             "status": "success",
-            "stats": stats
+            "performance_stats": stats,
+            "index_stats": index_stats
         }
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Failed to get stats: {str(e)}"
+        )
+
+
+@router.post("/update-index")
+async def update_index_incremental():
+    """增量更新FAISS索引（添加新术语）"""
+    try:
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy import create_engine
+
+        # 数据库连接
+        DATABASE_URL = "mysql+pymysql://root:123456@localhost/Extension"
+        engine = create_engine(DATABASE_URL)
+        SessionLocal = sessionmaker(
+            autocommit=False, autoflush=False, bind=engine)
+        db = SessionLocal()
+
+        try:
+            # 获取TermMatcher实例
+            matcher = get_term_matcher()
+
+            # 检查索引是否已加载
+            if not matcher.faiss_manager.is_index_loaded():
+                return {
+                    "message": "Index not loaded, please rebuild index first",
+                    "status": "no_index"
+                }
+
+            # 获取现有索引中的term_id
+            existing_ids = set(matcher.faiss_manager.term_id_to_index.keys())
+
+            # 获取数据库中的所有术语
+            all_terms = db.query(Term).all()
+
+            # 找出新增的术语
+            new_terms = []
+            for term in all_terms:
+                if term.term_id not in existing_ids:
+                    new_terms.append({
+                        "term_id": term.term_id,
+                        "en": term.en
+                    })
+
+            if not new_terms:
+                return {
+                    "message": "No new terms to add",
+                    "status": "up_to_date",
+                    "total_terms": len(all_terms),
+                    "indexed_terms": len(existing_ids)
+                }
+
+            # 增量更新索引
+            matcher.add_terms_to_index(new_terms)
+
+            return {
+                "message": f"Successfully added {len(new_terms)} new terms to index",
+                "status": "updated",
+                "new_terms_count": len(new_terms),
+                "total_terms": len(all_terms),
+                "indexed_terms": len(existing_ids) + len(new_terms),
+                "new_terms": [term["en"] for term in new_terms]
+            }
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update index: {str(e)}"
         )
 
 

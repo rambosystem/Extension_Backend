@@ -39,6 +39,8 @@ async def create_user_terms(user_id: int, terms: List[TermCreate], db: Session =
 
     # 创建术语列表
     created_terms = []
+    new_terms_added = False  # 标记是否有新术语被添加
+
     for term_data in terms:
         # 检查术语是否已存在
         existing_term = db.query(Term).filter(
@@ -61,6 +63,7 @@ async def create_user_terms(user_id: int, terms: List[TermCreate], db: Session =
             )
             db.add(new_term)
             created_terms.append(new_term)
+            new_terms_added = True  # 标记有新术语添加
 
     # 提交到数据库
     db.commit()
@@ -69,10 +72,52 @@ async def create_user_terms(user_id: int, terms: List[TermCreate], db: Session =
     for term in created_terms:
         db.refresh(term)
 
+    # 如果有新术语添加，自动触发索引更新
+    if new_terms_added:
+        try:
+            from app.services.embedding_service import EmbeddingService
+            embedding_service = EmbeddingService()
+
+            # 在后台异步更新索引
+            import asyncio
+            asyncio.create_task(update_index_for_user(
+                user_id, embedding_service))
+
+        except Exception as e:
+            # 索引更新失败不影响术语创建，只记录日志
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to update index for user {user_id}: {e}")
+
     return UserTermsResponse(
         terms=created_terms,
         total_terms=len(created_terms)
     )
+
+
+async def update_index_for_user(user_id: int, embedding_service):
+    """异步更新用户的索引"""
+    try:
+        # 更新embedding状态为building
+        embedding_service.update_embedding_status("building", user_id)
+
+        # 重建用户的embedding索引
+        result = embedding_service.build_embeddings_for_user(user_id)
+
+        # 更新embedding状态为completed
+        embedding_service.update_embedding_status("completed", user_id)
+
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Index updated successfully for user {user_id}: {result}")
+
+    except Exception as e:
+        # 更新失败，设置状态为failed
+        embedding_service.update_embedding_status("failed", user_id)
+
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to update index for user {user_id}: {e}")
 
 
 @router.delete("/{user_id}/terms/{en}", response_model=DeleteTermResponse)

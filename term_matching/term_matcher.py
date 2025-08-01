@@ -325,6 +325,73 @@ class TermMatcher:
             logger.error(f"Error saving index: {e}")
             raise e
 
+    def add_terms_to_index(self, new_terms_data: List[Dict]) -> None:
+        """
+        向现有索引添加新的术语（增量更新）
+
+        Args:
+            new_terms_data: 新术语数据列表，格式为[{"term_id": int, "en": str}, ...]
+        """
+        if not new_terms_data:
+            logger.warning("No new terms to add")
+            return
+
+        if not self.faiss_manager.is_index_loaded():
+            raise ValueError(
+                "No index available. Please build or load index first.")
+
+        try:
+            # 提取新术语的文本和ID
+            new_term_texts = []
+            new_term_ids = []
+
+            for term in new_terms_data:
+                if "term_id" not in term or "en" not in term:
+                    raise ValueError(
+                        "Each term must contain 'term_id' and 'en' fields")
+
+                new_term_texts.append(term["en"])
+                new_term_ids.append(term["term_id"])
+
+            # 检查ID冲突
+            existing_ids = set(self.faiss_manager.term_id_to_index.keys())
+            conflicting_ids = [
+                tid for tid in new_term_ids if tid in existing_ids]
+            if conflicting_ids:
+                raise ValueError(
+                    f"Term IDs already exist in index: {conflicting_ids}")
+
+            # 编码新术语
+            logger.info(f"Encoding {len(new_terms_data)} new terms...")
+            new_embeddings = self.embedding_service.encode_dense(
+                new_term_texts)
+
+            # 添加到现有索引
+            logger.info(f"Adding {len(new_terms_data)} new terms to index...")
+            self.faiss_manager.add_terms(new_embeddings, new_term_ids)
+
+            # 自动保存更新后的索引
+            self.faiss_manager.save_index(self.index_path, self.mapping_path)
+
+            logger.info(
+                f"Successfully added {len(new_terms_data)} new terms to index")
+
+        except Exception as e:
+            logger.error(f"Error adding terms to index: {e}")
+            raise e
+
+    def get_index_stats(self) -> Dict:
+        """
+        获取索引统计信息
+
+        Returns:
+            索引统计信息字典
+        """
+        if not self.faiss_manager.is_index_loaded():
+            return {"error": "No index loaded"}
+
+        return self.faiss_manager.get_stats()
+
     def match_terms(self, input_texts: List[str], similarity_threshold: float = 0.7,
                     top_k: int = 10, max_ngram: int = 3) -> List[List[int]]:
         """
