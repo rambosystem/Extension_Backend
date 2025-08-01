@@ -392,6 +392,35 @@ class TermMatcher:
 
         return self.faiss_manager.get_stats()
 
+    def remove_terms_from_index(self, term_ids_to_remove: List[int]) -> None:
+        """
+        从索引中移除指定的术语
+
+        Args:
+            term_ids_to_remove: 要移除的术语ID列表
+        """
+        if not term_ids_to_remove:
+            logger.warning("No terms to remove")
+            return
+
+        if not self.faiss_manager.is_index_loaded():
+            raise ValueError(
+                "No index available. Please build or load index first.")
+
+        try:
+            # 使用FAISSManager的remove_terms方法
+            self.faiss_manager.remove_terms(term_ids_to_remove)
+
+            # 自动保存更新后的索引
+            self.faiss_manager.save_index(self.index_path, self.mapping_path)
+
+            logger.info(
+                f"Successfully removed {len(term_ids_to_remove)} terms from index")
+
+        except Exception as e:
+            logger.error(f"Error removing terms from index: {e}")
+            raise e
+
     def match_terms(self, input_texts: List[str], similarity_threshold: float = 0.7,
                     top_k: int = 10, max_ngram: int = 3) -> List[List[int]]:
         """

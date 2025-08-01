@@ -138,11 +138,30 @@ async def delete_user_term(user_id: int, en: str, db: Session = Depends(get_db))
     if not term:
         raise HTTPException(status_code=404, detail="Term not found")
 
+    # 保存term_id用于索引删除
+    term_id = term.term_id
+
     # 删除术语
     db.delete(term)
     db.commit()
 
-    return DeleteTermResponse(message="Term deleted successfully", term_id=term.term_id)
+    # 从索引中删除术语
+    try:
+        from term_matching.term_matcher import TermMatcher
+        matcher = TermMatcher()
+        matcher.remove_terms_from_index([term_id])
+
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Term {term_id} removed from index successfully")
+
+    except Exception as e:
+        # 索引删除失败不影响数据库删除，只记录日志
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Failed to remove term {term_id} from index: {e}")
+
+    return DeleteTermResponse(message="Term deleted successfully", term_id=term_id)
 
 
 @router.delete("/{user_id}/terms", response_model=DeleteTermsResponse)
@@ -173,11 +192,30 @@ async def delete_user_terms(user_id: int, request: DeleteTermsRequest, db: Sessi
             detail=f"Terms not found: {list(missing_en_terms)}"
         )
 
+    # 保存term_ids用于索引删除
+    term_ids = [term.term_id for term in terms]
+
     # 删除术语
     for term in terms:
         db.delete(term)
 
     db.commit()
+
+    # 从索引中删除术语
+    try:
+        from term_matching.term_matcher import TermMatcher
+        matcher = TermMatcher()
+        matcher.remove_terms_from_index(term_ids)
+
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Terms {term_ids} removed from index successfully")
+
+    except Exception as e:
+        # 索引删除失败不影响数据库删除，只记录日志
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Failed to remove terms {term_ids} from index: {e}")
 
     return DeleteTermsResponse(
         message="Terms deleted successfully",
