@@ -10,6 +10,7 @@ class TermCreate(BaseModel):
 
 
 class TermResponse(BaseModel):
+    term_id: int
     en: str
     cn: Optional[str] = None
     jp: Optional[str] = None
@@ -20,7 +21,6 @@ class TermResponse(BaseModel):
 
 class UserTermsResponse(BaseModel):
     terms: List[TermResponse]
-    total_terms: int
 
 
 class DeleteTermResponse(BaseModel):
@@ -29,7 +29,7 @@ class DeleteTermResponse(BaseModel):
 
 
 class DeleteTermsRequest(BaseModel):
-    en_terms: List[str]
+    term_ids: List[int]
 
 
 class DeleteTermsResponse(BaseModel):

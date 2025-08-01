@@ -23,8 +23,7 @@ async def get_user_terms(user_id: int, db: Session = Depends(get_db)):
         Term.term_id.desc()).all()
 
     return UserTermsResponse(
-        terms=terms,
-        total_terms=len(terms)
+        terms=terms
     )
 
 
@@ -39,7 +38,6 @@ async def create_user_terms(user_id: int, terms: List[TermCreate], db: Session =
 
     # 创建术语列表
     created_terms = []
-    new_terms_added = False  # 标记是否有新术语被添加
 
     for term_data in terms:
         # 检查术语是否已存在
@@ -63,7 +61,6 @@ async def create_user_terms(user_id: int, terms: List[TermCreate], db: Session =
             )
             db.add(new_term)
             created_terms.append(new_term)
-            new_terms_added = True  # 标记有新术语添加
 
     # 提交到数据库
     db.commit()
@@ -72,57 +69,14 @@ async def create_user_terms(user_id: int, terms: List[TermCreate], db: Session =
     for term in created_terms:
         db.refresh(term)
 
-    # 如果有新术语添加，自动触发索引更新
-    if new_terms_added:
-        try:
-            from app.services.embedding_service import EmbeddingService
-            embedding_service = EmbeddingService()
-
-            # 在后台异步更新索引
-            import asyncio
-            asyncio.create_task(update_index_for_user(
-                user_id, embedding_service))
-
-        except Exception as e:
-            # 索引更新失败不影响术语创建，只记录日志
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Failed to update index for user {user_id}: {e}")
-
     return UserTermsResponse(
-        terms=created_terms,
-        total_terms=len(created_terms)
+        terms=created_terms
     )
 
 
-async def update_index_for_user(user_id: int, embedding_service):
-    """异步更新用户的索引"""
-    try:
-        # 更新embedding状态为building
-        embedding_service.update_embedding_status("building", user_id)
-
-        # 重建用户的embedding索引
-        result = embedding_service.build_embeddings_for_user(user_id)
-
-        # 更新embedding状态为completed
-        embedding_service.update_embedding_status("completed", user_id)
-
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"Index updated successfully for user {user_id}: {result}")
-
-    except Exception as e:
-        # 更新失败，设置状态为failed
-        embedding_service.update_embedding_status("failed", user_id)
-
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"Failed to update index for user {user_id}: {e}")
-
-
-@router.delete("/{user_id}/terms/{en}", response_model=DeleteTermResponse)
-async def delete_user_term(user_id: int, en: str, db: Session = Depends(get_db)):
-    """根据英文术语删除用户的单个术语"""
+@router.delete("/{user_id}/terms/{term_id}", response_model=DeleteTermResponse)
+async def delete_user_term(user_id: int, term_id: int, db: Session = Depends(get_db)):
+    """根据term_id删除用户的单个术语"""
 
     # 查询用户是否存在
     user = db.query(User).filter(User.user_id == user_id).first()
@@ -131,15 +85,12 @@ async def delete_user_term(user_id: int, en: str, db: Session = Depends(get_db))
 
     # 查询术语是否存在且属于该用户
     term = db.query(Term).filter(
-        Term.en == en,
+        Term.term_id == term_id,
         Term.user_id == user_id
     ).first()
 
     if not term:
         raise HTTPException(status_code=404, detail="Term not found")
-
-    # 保存term_id用于索引删除
-    term_id = term.term_id
 
     # 删除术语
     db.delete(term)
@@ -166,7 +117,7 @@ async def delete_user_term(user_id: int, en: str, db: Session = Depends(get_db))
 
 @router.delete("/{user_id}/terms", response_model=DeleteTermsResponse)
 async def delete_user_terms(user_id: int, request: DeleteTermsRequest, db: Session = Depends(get_db)):
-    """根据英文术语批量删除用户的术语"""
+    """根据term_id批量删除用户的术语"""
 
     # 查询用户是否存在
     user = db.query(User).filter(User.user_id == user_id).first()
@@ -175,7 +126,7 @@ async def delete_user_terms(user_id: int, request: DeleteTermsRequest, db: Sessi
 
     # 查询所有要删除的术语
     terms = db.query(Term).filter(
-        Term.en.in_(request.en_terms),
+        Term.term_id.in_(request.term_ids),
         Term.user_id == user_id
     ).all()
 
@@ -183,13 +134,13 @@ async def delete_user_terms(user_id: int, request: DeleteTermsRequest, db: Sessi
         raise HTTPException(status_code=404, detail="No terms found to delete")
 
     # 检查是否所有请求的术语都存在
-    found_en_terms = [term.en for term in terms]
-    missing_en_terms = set(request.en_terms) - set(found_en_terms)
+    found_term_ids = [term.term_id for term in terms]
+    missing_term_ids = set(request.term_ids) - set(found_term_ids)
 
-    if missing_en_terms:
+    if missing_term_ids:
         raise HTTPException(
             status_code=404,
-            detail=f"Terms not found: {list(missing_en_terms)}"
+            detail=f"Terms not found: {list(missing_term_ids)}"
         )
 
     # 保存term_ids用于索引删除
