@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, TIMESTAMP, Boolean, ForeignKey, text, BigInteger, DateTime
+from sqlalchemy import Column, Integer, String, Text, TIMESTAMP, Boolean, ForeignKey, text, BigInteger, DateTime, JSON, Index
 from sqlalchemy.orm import relationship
 from app.db.database import Base
 
@@ -59,3 +59,37 @@ class Embedding(Base):
 
     # 关系映射
     user = relationship("User", back_populates="embeddings")
+
+
+class LokaliseKey(Base):
+    """Lokalise Key 数据表"""
+    __tablename__ = "lokalise_keys"
+    
+    # 主键：Lokalise Key ID
+    id = Column(Integer, primary_key=True, comment="Lokalise Key ID")
+    
+    # Key 名称
+    key_name = Column(String(255), nullable=False, comment="Key名称")
+    
+    # 标签（JSON格式存储）
+    tags = Column(JSON, nullable=True, comment="标签列表")
+    
+    # 项目ID
+    project_id = Column(String(100), nullable=False, comment="Lokalise项目ID")
+    
+    # 项目名称
+    project_name = Column(String(255), nullable=False, comment="项目名称")
+    
+    # 创建时间
+    created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间")
+    
+    # 更新时间
+    updated_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"), comment="更新时间")
+    
+    
+    # 创建索引
+    __table_args__ = (
+        Index('idx_project_id', 'project_id'),
+        Index('idx_key_name', 'key_name'),
+        Index('idx_project_key', 'project_id', 'key_name'),
+    )
