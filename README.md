@@ -81,10 +81,10 @@ pip install -r requirements.txt
 ```env
 # 数据库配置
 DB_HOST=localhost
-DB_PORT=3306
-DB_USER=root
-DB_PASSWORD=your_password
-DB_NAME=Extension
+DB_PORT=2069
+DB_USER=rambo
+DB_PASSWORD=Wx19971009.
+DB_NAME=edge_extension_db
 
 # 模型配置
 MODEL_PATH=./models/bge-large-en-v1.5

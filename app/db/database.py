@@ -5,11 +5,11 @@ from dotenv import load_dotenv
 
 load_dotenv()  # 读取 .env 文件
 
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
-DB_HOST = os.getenv("DB_HOST")
-DB_PORT = os.getenv("DB_PORT")
-DB_NAME = os.getenv("DB_NAME")
+DB_USER = os.getenv("DB_USER", "rambo")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "Wx19971009.")
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", "2069")
+DB_NAME = os.getenv("DB_NAME", "edge_extension_db")
 
 DB_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 

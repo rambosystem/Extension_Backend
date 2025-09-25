@@ -13,10 +13,10 @@ class Settings(BaseSettings):
 
     # MySQL数据库配置
     DB_HOST: str = "localhost"
-    DB_PORT: int = 3306
-    DB_USER: str = "root"
-    DB_PASSWORD: str = ""
-    DB_NAME: str = "Extension"
+    DB_PORT: int = 2069
+    DB_USER: str = "rambo"
+    DB_PASSWORD: str = "Wx19971009."
+    DB_NAME: str = "edge_extension_db"
 
     # BGE-M3 Embedding配置 - 离线模式
     EMBEDDING_MODEL: str = "BAAI/bge-m3"

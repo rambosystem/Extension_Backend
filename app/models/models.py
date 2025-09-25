@@ -28,7 +28,7 @@ class User(Base):
 class Term(Base):
     __tablename__ = "terms"
 
-    term_id = Column(Integer, primary_key=True,
+    term_id = Column(BigInteger, primary_key=True,
                      autoincrement=True, comment="术语唯一标识")
     user_id = Column(Integer, ForeignKey(
         "users.user_id", ondelete="CASCADE"), nullable=False, comment="关联用户的外键")

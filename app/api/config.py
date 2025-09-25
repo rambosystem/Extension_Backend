@@ -12,10 +12,10 @@ class Settings(BaseSettings):
     
     # MySQL数据库配置
     DB_HOST: str = "localhost"
-    DB_PORT: int = 3306
-    DB_USER: str = "root"
-    DB_PASSWORD: str = ""
-    DB_NAME: str = "faiss_db"
+    DB_PORT: int = 2069
+    DB_USER: str = "rambo"
+    DB_PASSWORD: str = "Wx19971009."
+    DB_NAME: str = "edge_extension_db"
     
     # FAISS配置
     FAISS_INDEX_PATH: str = "./faiss_indexes"

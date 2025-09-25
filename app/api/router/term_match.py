@@ -104,6 +104,7 @@ async def match_terms(
             if term_id in term_map:
                 term = term_map[term_id]
                 all_unique_terms.append(TermResponse(
+                    term_id=term.term_id,
                     en=term.en,
                     cn=term.cn,
                     jp=term.jp
@@ -363,13 +364,27 @@ async def update_index_incremental():
         # 增量更新索引
         matcher.add_terms_to_index(new_terms)
 
+        # 更新所有用户的索引状态为已完成，并更新last_embedding_time
+        # 获取所有用户ID
+        db = next(get_db())
+        try:
+            user_ids = db.query(Term.user_id).distinct().all()
+            user_ids = [user_id[0] for user_id in user_ids]
+        finally:
+            db.close()
+
+        # 为每个用户更新状态
+        for user_id in user_ids:
+            await update_index_status(user_id, "completed")
+
         return {
             "message": f"Successfully added {len(new_terms)} new terms to index",
             "status": "updated",
             "new_terms_count": len(new_terms),
             "total_terms": len(all_terms),
             "indexed_terms": len(existing_ids) + len(new_terms),
-            "new_terms": [term["en"] for term in new_terms]
+            "new_terms": [term["en"] for term in new_terms],
+            "updated_users": user_ids
         }
 
     except Exception as e:
