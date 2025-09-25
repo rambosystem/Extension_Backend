@@ -70,17 +70,29 @@ async def webhook(request: Request, db: Session = Depends(get_db)):
         elif event == 'project.keys.deleted':
             result = await handle_keys_deleted(db, key_data, keys_data, project_data)
         else:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Unsupported event type: {event}"
+            # 不支持的事件类型，返回200但标记为不支持
+            logger.warning(f"Unsupported event type: {event}")
+            result = LokaliseWebhookResponse(
+                success=False,
+                message=f"Unsupported event type: {event}",
+                event_type=event,
+                key_id=None,
+                project_id=project_data.get('id')
             )
         
         logger.info(f"Successfully processed webhook event: {event}")
         return result
         
-    except Exception as e:
-        logger.error(f"Error processing webhook: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing webhook: {str(e)}")
+    except Exception as json_error:
+        logger.error(f"Error parsing JSON: {str(json_error)}")
+        # JSON解析失败也返回200，避免Lokalise重试
+        return LokaliseWebhookResponse(
+            success=False,
+            message=f"Invalid JSON format: {str(json_error)}",
+            event_type='unknown',
+            key_id=None,
+            project_id=None
+        )
 
 
 async def handle_key_added(db: Session, key_data: Dict[str, Any], project_data: Dict[str, Any]) -> LokaliseWebhookResponse:
