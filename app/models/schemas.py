@@ -123,3 +123,46 @@ class KeyNameSearchResponse(BaseModel):
     message: str
     total_found: int
     results: List[KeySearchResult]
+
+
+class KeyAutocompleteRequest(BaseModel):
+    """Key自动完成查询请求模型"""
+    project_id: str
+    query: str  # 搜索关键词
+    limit: Optional[int] = 5  # 返回结果数量限制，默认5个
+
+
+class TagAutocompleteRequest(BaseModel):
+    """Tag自动完成查询请求模型"""
+    project_id: str
+    query: str  # 搜索关键词
+    limit: Optional[int] = 5  # 返回结果数量限制，默认5个
+
+
+class KeyAutocompleteResult(BaseModel):
+    """Key自动完成单个结果模型"""
+    key_id: int
+    key_name: str
+    tags: Optional[List[str]] = None
+
+
+class TagAutocompleteResult(BaseModel):
+    """Tag自动完成单个结果模型"""
+    tag: str
+    count: int  # 使用该tag的key数量
+
+
+class KeyAutocompleteResponse(BaseModel):
+    """Key自动完成查询响应模型"""
+    success: bool
+    message: str
+    total_found: int
+    results: List[KeyAutocompleteResult]
+
+
+class TagAutocompleteResponse(BaseModel):
+    """Tag自动完成查询响应模型"""
+    success: bool
+    message: str
+    total_found: int
+    results: List[TagAutocompleteResult]

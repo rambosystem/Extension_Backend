@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Request, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import or_, and_
 from typing import Dict, Any
 import logging
+import re
 from datetime import datetime
 
 from app.db.database import get_db
@@ -14,11 +16,36 @@ from app.models.schemas import (
     LokaliseKeyResponse,
     KeyNameSearchRequest,
     KeyNameSearchResponse,
-    KeySearchResult
+    KeySearchResult,
+    KeyAutocompleteRequest,
+    KeyAutocompleteResponse,
+    KeyAutocompleteResult,
+    TagAutocompleteRequest,
+    TagAutocompleteResponse,
+    TagAutocompleteResult
 )
 
 router = APIRouter(prefix="/lokalise", tags=["lokalise"])
 logger = logging.getLogger(__name__)
+
+
+def is_single_word_key(key_name: str) -> bool:
+    """
+    判断key是否为单词语（英文+数字，如abc123）
+    
+    Args:
+        key_name: key名称
+        
+    Returns:
+        bool: 是否为单词语
+    """
+    if not key_name:
+        return False
+    
+    # 使用正则表达式匹配：只包含英文字母和数字，且不包含分隔符
+    # 匹配模式：^[a-zA-Z0-9]+$ 且长度大于0
+    pattern = r'^[a-zA-Z0-9]+$'
+    return bool(re.match(pattern, key_name))
 
 
 @router.get("/")
@@ -129,7 +156,8 @@ async def handle_key_added(db: Session, key_data: Dict[str, Any], project_data: 
             key_name=key_name,
             tags=tags,
             project_id=project_id,
-            project_name=project_name
+            project_name=project_name,
+            is_single_word=is_single_word_key(key_name)
         )
         
         db.add(new_key)
@@ -192,7 +220,8 @@ async def handle_keys_added(db: Session, keys_data: list, project_data: Dict[str
                         key_name=key_name,
                         tags=tags,
                         project_id=project_id,
-                        project_name=project_name
+                        project_name=project_name,
+                        is_single_word=is_single_word_key(key_name)
                     )
                     
                     db.add(new_key)
@@ -257,6 +286,7 @@ async def handle_keys_modified(db: Session, keys_data: list, project_data: Dict[
                     existing_key.key_name = key_name
                     existing_key.tags = tags
                     existing_key.project_name = project_name
+                    existing_key.is_single_word = is_single_word_key(key_name)
                     
                     modified_count += 1
                 else:
@@ -313,6 +343,7 @@ async def handle_key_modified(db: Session, key_data: Dict[str, Any], project_dat
         existing_key.key_name = key_name
         existing_key.tags = tags
         existing_key.project_name = project_name
+        existing_key.is_single_word = is_single_word_key(key_name)
         
         db.commit()
         db.refresh(existing_key)
@@ -549,4 +580,313 @@ async def search_keys_by_names(request: KeyNameSearchRequest, db: Session = Depe
         
     except Exception as e:
         logger.error(f"Error searching keys by names: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/autocomplete/keys", response_model=KeyAutocompleteResponse)
+async def autocomplete_keys(
+    project_id: str,
+    query: str,
+    limit: int = 5,
+    db: Session = Depends(get_db)
+):
+    """
+    Key自动完成查询接口 - 根据key name进行前缀搜索
+    
+    限制条件:
+    - 只返回单个词的key（不包含空格、下划线、点号、连字符等分隔符）
+    - 必须是以输入字符开头的key（前缀匹配）
+    - 按数字后缀倒序排列，方便找到最后一个key
+    - 例如：输入 "wmt" 返回 "wmtkey401", "wmtkey400", "wmtkey99", "wmtkey1", "wmt"
+    
+    查询参数:
+    - project_id: 项目ID
+    - query: 搜索关键词（前缀）
+    - limit: 返回结果数量限制，默认5个
+    
+    示例:
+    GET /lokalise/autocomplete/keys?project_id=project123&query=app&limit=5
+    
+    返回:
+    {
+        "success": true,
+        "message": "Found 5 results",
+        "total_found": 5,
+        "results": [
+            {
+                "key_id": 459870801,
+                "key_name": "wmtkey401",
+                "tags": ["Walmart"]
+            },
+            {
+                "key_id": 459870800,
+                "key_name": "wmtkey400",
+                "tags": ["Walmart"]
+            },
+            {
+                "key_id": 459870710,
+                "key_name": "wmtkey99",
+                "tags": ["Walmart"]
+            },
+            {
+                "key_id": 459870701,
+                "key_name": "wmtkey1",
+                "tags": ["Walmart"]
+            },
+            {
+                "key_id": 704646832,
+                "key_name": "wmt",
+                "tags": []
+            }
+        ]
+    }
+    """
+    try:
+        if not query or not query.strip():
+            return KeyAutocompleteResponse(
+                success=False,
+                message="Query cannot be empty",
+                total_found=0,
+                results=[]
+            )
+        
+        # 清理查询字符串
+        query = query.strip()
+        limit = min(limit, 20)  # 限制最大返回数量为20，提升性能
+        
+        # 使用is_single_word字段进行高效过滤，只返回单词语的key
+        # 优化：使用前缀匹配（以输入字符开头）而不是包含匹配
+        # 对于数字后缀的key，使用数字排序而不是字母排序
+        # 使用原生SQL进行数字排序，确保找到最大的数字key
+        from sqlalchemy import text
+        
+        sql_query = text("""
+            SELECT * FROM lokalise_keys 
+            WHERE project_id = :project_id 
+              AND key_name LIKE :query_pattern 
+              AND is_single_word = 1
+            ORDER BY 
+              CASE 
+                WHEN key_name REGEXP :regex_pattern 
+                THEN CAST(SUBSTRING(key_name, :prefix_length + 1) AS UNSIGNED)
+                ELSE 0 
+              END DESC,
+              key_name DESC
+            LIMIT :limit_count
+        """)
+        
+        # 动态分析数据模式，自动识别完整的前缀
+        # 查找所有以query开头的key，分析最常见的完整前缀模式
+        pattern_analysis = text("""
+            SELECT 
+                key_name,
+                SUBSTRING(key_name, 1, LENGTH(:query) + 1) as prefix_pattern
+            FROM lokalise_keys 
+            WHERE key_name LIKE :pattern 
+              AND is_single_word = 1 
+              AND key_name REGEXP CONCAT(:query, '[a-zA-Z]+[0-9]+$')
+            ORDER BY key_name DESC
+            LIMIT 10
+        """)
+        
+        results = db.execute(pattern_analysis, {
+            'query': query,
+            'pattern': f"{query}%"
+        }).fetchall()
+        
+        if results:
+            # 分析最常见的完整前缀
+            prefix_counts = {}
+            for row in results:
+                # 提取完整的前缀（去掉数字部分）
+                import re
+                match = re.match(r'^([a-zA-Z]+)\d+$', row.key_name)
+                if match:
+                    full_prefix = match.group(1)
+                    prefix_counts[full_prefix] = prefix_counts.get(full_prefix, 0) + 1
+            
+            if prefix_counts:
+                # 选择最常见的完整前缀
+                common_prefix = max(prefix_counts, key=prefix_counts.get)
+                regex_pattern = f"{common_prefix}[0-9]+$"
+                prefix_length = len(common_prefix)
+            else:
+                # 回退到简单模式
+                common_prefix = results[0].prefix_pattern
+                regex_pattern = f"{common_prefix}[0-9]+$"
+                prefix_length = len(common_prefix)
+        else:
+            # 尝试 "query + key" 模式
+            test_query = f"{query}key%"
+            test_count = db.execute(text("SELECT COUNT(*) FROM lokalise_keys WHERE key_name LIKE :pattern AND is_single_word = 1"), 
+                                   {'pattern': test_query}).scalar()
+            
+            if test_count > 0:
+                regex_pattern = f"{query}key[0-9]+$"
+                prefix_length = len(query) + 3
+            else:
+                # 使用直接 "query + 数字" 模式
+                regex_pattern = f"{query}[0-9]+$"
+                prefix_length = len(query)
+        
+        keys = db.execute(sql_query, {
+            'project_id': project_id,
+            'query_pattern': f"{query}%",
+            'regex_pattern': regex_pattern,
+            'prefix_length': prefix_length,
+            'limit_count': limit
+        }).fetchall()
+        
+        # 转换为LokaliseKey对象
+        key_objects = []
+        for row in keys:
+            # 处理tags字段，确保是列表类型
+            tags = row.tags
+            if isinstance(tags, str):
+                import json
+                try:
+                    tags = json.loads(tags)
+                except:
+                    tags = []
+            elif tags is None:
+                tags = []
+            
+            key_obj = LokaliseKey(
+                id=row.id,
+                key_name=row.key_name,
+                tags=tags,
+                project_id=row.project_id,
+                project_name=row.project_name,
+                is_single_word=row.is_single_word
+            )
+            key_objects.append(key_obj)
+        
+        keys = key_objects
+        
+        # 转换为响应格式
+        results = []
+        for key in keys:
+            result = KeyAutocompleteResult(
+                key_id=key.id,
+                key_name=key.key_name,
+                tags=key.tags if key.tags else []
+            )
+            results.append(result)
+        
+        # 结果已经按key_name倒序排列，无需额外排序
+        
+        message = f"Found {len(results)} key(s)"
+        if len(results) == limit:
+            message += f" (limited to {limit})"
+        
+        logger.info(f"Key autocomplete search completed: {len(results)} results for query '{query}'")
+        
+        return KeyAutocompleteResponse(
+            success=True,
+            message=message,
+            total_found=len(results),
+            results=results
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in key autocomplete search: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/autocomplete/tags", response_model=TagAutocompleteResponse)
+async def autocomplete_tags(
+    project_id: str,
+    query: str,
+    limit: int = 5,
+    db: Session = Depends(get_db)
+):
+    """
+    Tag自动完成查询接口 - 根据tag进行模糊搜索
+    
+    查询参数:
+    - project_id: 项目ID
+    - query: 搜索关键词
+    - limit: 返回结果数量限制，默认5个
+    
+    示例:
+    GET /lokalise/autocomplete/tags?project_id=project123&query=Auto&limit=5
+    
+    返回:
+    {
+        "success": true,
+        "message": "Found 2 results",
+        "total_found": 2,
+        "results": [
+            {
+                "tag": "Automation",
+                "count": 5
+            },
+            {
+                "tag": "AutoComplete",
+                "count": 3
+            }
+        ]
+    }
+    """
+    try:
+        if not query or not query.strip():
+            return TagAutocompleteResponse(
+                success=False,
+                message="Query cannot be empty",
+                total_found=0,
+                results=[]
+            )
+        
+        # 清理查询字符串
+        query = query.strip()
+        limit = min(limit, 20)  # 限制最大返回数量为20，提升性能
+        
+        # 优化：只查询包含匹配tag的keys，减少内存使用
+        # 使用JSON_SEARCH函数进行更高效的JSON搜索
+        keys = db.query(LokaliseKey).filter(
+            and_(
+                LokaliseKey.project_id == project_id,
+                # 使用JSON_SEARCH查找包含查询字符串的tag
+                f"JSON_SEARCH(tags, 'one', '%{query}%') IS NOT NULL"
+            )
+        ).limit(100).all()  # 限制查询数量，提升性能
+        
+        # 收集匹配的tags并统计
+        tag_counts = {}
+        for key in keys:
+            if key.tags:
+                for tag in key.tags:
+                    if query.lower() in tag.lower():
+                        tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        
+        # 转换为响应格式并按使用次数排序
+        results = []
+        for tag, count in tag_counts.items():
+            result = TagAutocompleteResult(
+                tag=tag,
+                count=count
+            )
+            results.append(result)
+        
+        # 按使用次数降序排序，然后按tag名称排序
+        results.sort(key=lambda x: (-x.count, x.tag.lower()))
+        
+        # 限制返回数量
+        results = results[:limit]
+        
+        message = f"Found {len(results)} tag(s)"
+        if len(tag_counts) > limit:
+            message += f" (limited to {limit})"
+        
+        logger.info(f"Tag autocomplete search completed: {len(results)} results for query '{query}'")
+        
+        return TagAutocompleteResponse(
+            success=True,
+            message=message,
+            total_found=len(results),
+            results=results
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in tag autocomplete search: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")

@@ -86,10 +86,15 @@ class LokaliseKey(Base):
     # 更新时间
     updated_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"), comment="更新时间")
     
+    # 单词语标志：标识是否为单个词（英文+数字，如abc123）
+    is_single_word = Column(Boolean, default=False, comment="是否为单词语（英文+数字）")
+    
     
     # 创建索引
     __table_args__ = (
         Index('idx_project_id', 'project_id'),
         Index('idx_key_name', 'key_name'),
         Index('idx_project_key', 'project_id', 'key_name'),
+        Index('idx_is_single_word', 'is_single_word'),
+        Index('idx_project_single_word', 'project_id', 'is_single_word'),
     )
