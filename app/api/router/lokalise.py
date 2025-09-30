@@ -11,7 +11,10 @@ from app.models.schemas import (
     LokaliseKeyUpdate, 
     LokaliseWebhookResponse,
     LokaliseKeysResponse,
-    LokaliseKeyResponse
+    LokaliseKeyResponse,
+    KeyNameSearchRequest,
+    KeyNameSearchResponse,
+    KeySearchResult
 )
 
 router = APIRouter(prefix="/lokalise", tags=["lokalise"])
@@ -475,3 +478,75 @@ async def get_key(project_id: str, key_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Error getting key: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error getting key: {str(e)}")
+
+
+@router.post("/search-by-names", response_model=KeyNameSearchResponse)
+async def search_keys_by_names(request: KeyNameSearchRequest, db: Session = Depends(get_db)):
+    """
+    根据 key_name 列表搜索 keys（大小写敏感）
+    
+    请求体:
+    {
+        "project_id": "project123",
+        "key_names": ["key1", "key2", "key3"]
+    }
+    
+    返回:
+    {
+        "success": true,
+        "message": "Search completed",
+        "total_found": 3,
+        "results": [
+            {
+                "key_id": 123,
+                "key_name": "key1",
+                "tags": ["tag1", "tag2"]
+            }
+        ]
+    }
+    """
+    try:
+        if not request.key_names:
+            return KeyNameSearchResponse(
+                success=False,
+                message="key_names list cannot be empty",
+                total_found=0,
+                results=[]
+            )
+        
+        # 查询匹配的 keys（大小写敏感，限制在指定项目内）
+        keys = db.query(LokaliseKey).filter(
+            LokaliseKey.project_id == request.project_id,
+            LokaliseKey.key_name.in_(request.key_names)
+        ).all()
+        
+        # 转换为响应格式
+        results = []
+        for key in keys:
+            result = KeySearchResult(
+                key_id=key.id,
+                key_name=key.key_name,
+                tags=key.tags if key.tags else []
+            )
+            results.append(result)
+        
+        # 统计找到的 keys
+        found_key_names = {key.key_name for key in keys}
+        not_found = set(request.key_names) - found_key_names
+        
+        message = f"Found {len(results)} keys"
+        if not_found:
+            message += f", {len(not_found)} keys not found: {list(not_found)[:5]}{'...' if len(not_found) > 5 else ''}"
+        
+        logger.info(f"Search completed: {len(results)}/{len(request.key_names)} keys found")
+        
+        return KeyNameSearchResponse(
+            success=True,
+            message=message,
+            total_found=len(results),
+            results=results
+        )
+        
+    except Exception as e:
+        logger.error(f"Error searching keys by names: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")

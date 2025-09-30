@@ -102,3 +102,24 @@ class LokaliseKeysResponse(BaseModel):
     project_id: str
     total_keys: int
     keys: List[LokaliseKeyResponse]
+
+
+class KeyNameSearchRequest(BaseModel):
+    """根据 key_name 列表搜索的请求模型"""
+    project_id: str  # 项目ID
+    key_names: List[str]
+
+
+class KeySearchResult(BaseModel):
+    """单个 key 搜索结果模型"""
+    key_id: int
+    key_name: str
+    tags: Optional[List[str]] = None
+
+
+class KeyNameSearchResponse(BaseModel):
+    """根据 key_name 列表搜索的响应模型"""
+    success: bool
+    message: str
+    total_found: int
+    results: List[KeySearchResult]

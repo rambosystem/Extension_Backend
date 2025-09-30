@@ -43,7 +43,8 @@ CREATE TABLE lokalise_keys (
 1. **POST /lokalise/webhook** - 处理webhook事件
 2. **GET /lokalise/keys/{project_id}** - 获取项目下的所有keys
 3. **GET /lokalise/keys/{project_id}/{key_id}** - 获取指定key
-4. **GET /lokalise/** - API状态检查
+4. **POST /lokalise/search-by-names** - 根据key名称列表搜索keys（大小写敏感）
+5. **GET /lokalise/** - API状态检查
 
 #### 支持的事件类型
 
@@ -59,6 +60,9 @@ CREATE TABLE lokalise_keys (
 - `LokaliseKeyResponse` - 响应模型
 - `LokaliseWebhookRequest` - webhook请求模型
 - `LokaliseWebhookResponse` - webhook响应模型
+- `KeyNameSearchRequest` - 按名称搜索请求模型（大小写敏感）
+- `KeyNameSearchResponse` - 按名称搜索响应模型
+- `KeySearchResult` - 单个搜索结果模型
 
 #### SQLAlchemy 模型
 - `LokaliseKey` - 数据库模型
@@ -167,7 +171,52 @@ python test_lokalise_api.py
 7. **索引优化** - 数据库查询性能优化
 8. **测试完备** - 包含完整的测试用例
 
-### 10. 扩展建议
+### 10. 搜索功能详解
+
+#### 按名称搜索接口 (POST /lokalise/search-by-names)
+
+**功能描述：**
+根据提供的key名称列表搜索匹配的keys，大小写敏感搜索。
+
+**请求参数：**
+```json
+{
+  "project_id": "project123",
+  "key_names": ["key1", "KEY2", "Key3"]
+}
+```
+
+**响应格式：**
+```json
+{
+  "success": true,
+  "message": "Found 2 keys, 1 keys not found: ['Key3']",
+  "total_found": 2,
+  "results": [
+    {
+      "key_id": 123,
+      "key_name": "key1",
+      "tags": ["tag1", "tag2"]
+    },
+    {
+      "key_id": 124,
+      "key_name": "KEY2",
+      "tags": ["tag3"]
+    }
+  ]
+}
+```
+
+**搜索逻辑：**
+- 精确匹配，区分大小写
+- 限制在指定项目内搜索
+- 数据库使用 `utf8mb4_bin` collation 支持大小写敏感查询
+
+**性能优化：**
+- 使用数据库索引 `idx_key_name` 提升查询性能
+- 支持批量搜索，一次请求可搜索多个key名称
+
+### 11. 扩展建议
 
 1. **批量操作** - 支持批量添加/删除keys
 2. **缓存机制** - 添加Redis缓存提升性能
@@ -175,6 +224,8 @@ python test_lokalise_api.py
 4. **监控告警** - 添加webhook处理失败告警
 5. **API限流** - 防止webhook请求过载
 6. **数据同步** - 与Lokalise API双向同步
+7. **模糊搜索** - 支持部分匹配和正则表达式搜索
+8. **搜索历史** - 记录用户搜索历史，提供搜索建议
 
 ## 总结
 
