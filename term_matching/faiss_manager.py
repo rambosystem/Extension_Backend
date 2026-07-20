@@ -29,6 +29,12 @@ class FAISSManager:
     - 文本编码（由BGE_Large_EN_EmbeddingService处理）
     """
 
+    # 向量数达到该阈值时改用 HNSW 近似检索（ANN），小于则用精确暴力检索
+    HNSW_THRESHOLD = 10000
+    HNSW_M = 32            # 每个节点的邻居数，越大精度越高、内存越多
+    HNSW_EF_CONSTRUCTION = 200  # 建图时的搜索深度
+    HNSW_EF_SEARCH = 128        # 查询时的搜索深度，越大召回越高、越慢
+
     def __init__(self, embedding_dim: int = 1024):
         """
         初始化FAISS管理器
@@ -40,6 +46,25 @@ class FAISSManager:
         self.index = None
         self.term_id_to_index = {}  # term_id -> index_position 映射
         self.index_to_term_id = {}  # index_position -> term_id 映射
+
+    def _create_index(self, n_vectors: int):
+        """
+        按向量规模选择索引类型：
+        - 小规模：IndexFlatIP，精确暴力内积检索
+        - 大规模：IndexHNSWFlat（内积度量），ANN 检索，速度快一个数量级
+        归一化向量下 HNSW 的精度损失很小。
+        """
+        if n_vectors >= self.HNSW_THRESHOLD:
+            index = faiss.IndexHNSWFlat(
+                self.embedding_dim, self.HNSW_M, faiss.METRIC_INNER_PRODUCT)
+            index.hnsw.efConstruction = self.HNSW_EF_CONSTRUCTION
+            index.hnsw.efSearch = self.HNSW_EF_SEARCH
+            logger.info(
+                f"Using HNSW index (ANN) for {n_vectors} vectors "
+                f"(M={self.HNSW_M}, efSearch={self.HNSW_EF_SEARCH})")
+            return index
+        logger.info(f"Using FlatIP index (exact) for {n_vectors} vectors")
+        return faiss.IndexFlatIP(self.embedding_dim)
 
     def build_index(self, embeddings: np.ndarray, term_ids: List[int]) -> None:
         """
@@ -63,8 +88,8 @@ class FAISSManager:
         try:
             logger.info(f"Building FAISS index for {len(term_ids)} terms")
 
-            # 创建FAISS索引（使用内积索引，适合归一化向量）
-            self.index = faiss.IndexFlatIP(self.embedding_dim)
+            # 按规模选择索引类型（小规模精确 / 大规模 HNSW 近似）
+            self.index = self._create_index(len(term_ids))
 
             # 确保数据类型正确
             embeddings_f32 = embeddings.astype(np.float32)
@@ -269,7 +294,12 @@ class FAISSManager:
 
     def remove_terms(self, term_ids_to_remove: List[int]) -> None:
         """
-        从索引中移除术语（注意：这会重建整个索引）
+        从索引中移除术语（软删除，O(k)）
+
+        仅从 ID 映射中剔除对应的 term_id，被删向量在物理索引里成为"孤儿"，
+        但检索时通过 `idx in self.index_to_term_id` 判断会被自然跳过，
+        因此结果正确且无需重建整个索引。物理向量的空间会在下一次全量
+        rebuild_index() 时回收。
 
         Args:
             term_ids_to_remove: 要移除的术语ID列表
@@ -277,36 +307,18 @@ class FAISSManager:
         if self.index is None:
             raise ValueError("No index available.")
 
-        # 找出要保留的术语
-        remaining_term_ids = []
-        remaining_indices = []
-
-        for term_id, index_pos in self.term_id_to_index.items():
-            if term_id not in term_ids_to_remove:
-                remaining_term_ids.append(term_id)
-                remaining_indices.append(index_pos)
-
-        if not remaining_term_ids:
-            # 清空索引
-            self.index = faiss.IndexFlatIP(self.embedding_dim)
-            self.term_id_to_index = {}
-            self.index_to_term_id = {}
-            logger.info("All terms removed, index cleared")
-            return
-
         try:
-            # 获取要保留的向量
-            remaining_vectors = []
-            for idx in remaining_indices:
-                vector = self.index.reconstruct(idx)
-                remaining_vectors.append(vector)
+            removed = 0
+            for term_id in term_ids_to_remove:
+                index_pos = self.term_id_to_index.pop(term_id, None)
+                if index_pos is not None:
+                    self.index_to_term_id.pop(index_pos, None)
+                    removed += 1
 
-            remaining_embeddings = np.array(remaining_vectors)
-
-            # 重建索引
-            self.build_index(remaining_embeddings, remaining_term_ids)
-
-            logger.info(f"Removed {len(term_ids_to_remove)} terms from index")
+            logger.info(
+                f"Removed {removed} terms from index mapping "
+                f"(soft delete; {self.index.ntotal} physical vectors, "
+                f"{len(self.term_id_to_index)} active)")
 
         except Exception as e:
             logger.error(f"Error removing terms from index: {e}")

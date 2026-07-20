@@ -44,6 +44,15 @@ class Term(Base):
     # 关系映射
     user = relationship("User", back_populates="terms")
 
+    # 索引：与线上库保持一致（按 user_id / en 过滤是高频操作：
+    # 匹配结果回查、用户术语列表、批量删除）
+    __table_args__ = (
+        Index('idx_user_id', 'user_id'),
+        Index('idx_en', 'en'),
+        Index('idx_created_at', 'created_at'),
+        Index('idx_user_en', 'user_id', 'en'),
+    )
+
 
 class Embedding(Base):
     __tablename__ = "embedding"

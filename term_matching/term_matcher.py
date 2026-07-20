@@ -123,6 +123,7 @@ class TermMatcher:
             (all_ngrams, ngram_to_texts): 所有n-grams列表和n-gram到(原文本, 文本索引)的映射
         """
         all_ngrams = []
+        seen_ngrams = set()
         ngram_to_texts = defaultdict(list)
 
         for text_idx, original_text in enumerate(input_texts):
@@ -132,10 +133,17 @@ class TermMatcher:
             # 预处理文本
             ngrams = self.preprocessor.process_text(original_text, max_ngram)
 
-            # 记录n-gram与原文本的关系
+            # 记录n-gram与原文本的关系（同一文本内的重复 n-gram 只记一次）
+            seen_in_text = set()
             for ngram in ngrams:
-                all_ngrams.append(ngram)
-                ngram_to_texts[ngram].append((original_text, text_idx))
+                if ngram not in seen_in_text:
+                    seen_in_text.add(ngram)
+                    ngram_to_texts[ngram].append((original_text, text_idx))
+                # 全局去重：同一 n-gram 只编码/检索一次，
+                # 出现在哪些文本由 ngram_to_texts 记录
+                if ngram not in seen_ngrams:
+                    seen_ngrams.add(ngram)
+                    all_ngrams.append(ngram)
 
         return all_ngrams, ngram_to_texts
 

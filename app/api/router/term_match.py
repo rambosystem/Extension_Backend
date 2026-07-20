@@ -6,24 +6,24 @@ from app.models.models import Term, Embedding
 from app.models.schemas import TermResponse
 from datetime import datetime
 
-# 在设置路径后导入term_matcher
-from term_matching.term_matcher import TermMatcher
+# 轻量字符串匹配器（无模型、无 FAISS）
+from term_matching.string_matcher import StringTermMatcher
 
 router = APIRouter(prefix="/term-match", tags=["term-match"])
 
-# 全局TermMatcher实例
+# 全局匹配器实例（单例）
 term_matcher = None
 
 
 def get_term_matcher():
-    """获取TermMatcher实例（单例模式）"""
+    """获取术语匹配器实例（单例模式）"""
     global term_matcher
     if term_matcher is None:
         try:
-            term_matcher = TermMatcher()
-            print("✅ TermMatcher initialized successfully")
+            term_matcher = StringTermMatcher()
+            print("✅ StringTermMatcher initialized successfully")
         except Exception as e:
-            print(f"❌ Failed to initialize TermMatcher: {e}")
+            print(f"❌ Failed to initialize StringTermMatcher: {e}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Term matching service unavailable: {str(e)}"
@@ -58,59 +58,36 @@ async def match_terms(
         匹配结果列表，所有匹配的术语合并为一个去重的列表
     """
     try:
-        # 获取TermMatcher实例
         matcher = get_term_matcher()
 
-        # 执行术语匹配
-        matched_term_ids = matcher.match_terms(
-            texts,
-            similarity_threshold=similarity_threshold,
-            top_k=top_k,
-            max_ngram=max_ngram
-        )
-
-        # 收集所有匹配的term_id并进行去重
-        all_term_ids = set()
-        for term_id_list in matched_term_ids:
-            all_term_ids.update(term_id_list)
-
-        if not all_term_ids:
-            # 没有匹配结果，返回空列表
-            return []
-
-        # 查询数据库获取术语详情
-        query_builder = db.query(Term).filter(
-            Term.term_id.in_(list(all_term_ids)))
-
-        # 如果指定了用户ID，添加用户过滤
+        # 从数据库加载候选术语（指定用户则只取该用户的）
+        query_builder = db.query(Term)
         if user_id is not None:
             query_builder = query_builder.filter(Term.user_id == user_id)
+        candidate_terms = query_builder.all()
 
-        terms = query_builder.all()
+        if not candidate_terms:
+            return []
 
-        # 创建term_id到Term对象的映射
-        term_map = {term.term_id: term for term in terms}
+        # 字符串匹配（毫秒级，无需线程池）
+        matched_term_ids = matcher.match_terms(
+            texts, candidate_terms, top_k=top_k)
 
-        # 构建返回结果（使用set集合记录term_id，然后转换为术语列表）
+        # 收集去重
         unique_term_ids = set()
-
-        # 收集所有匹配的term_id到set中（自动去重）
         for term_id_list in matched_term_ids:
             unique_term_ids.update(term_id_list)
 
-        # 根据去重后的term_id构建术语列表
-        all_unique_terms = []
-        for term_id in unique_term_ids:
-            if term_id in term_map:
-                term = term_map[term_id]
-                all_unique_terms.append(TermResponse(
-                    term_id=term.term_id,
-                    en=term.en,
-                    cn=term.cn,
-                    jp=term.jp
-                ))
+        if not unique_term_ids:
+            return []
 
-        return all_unique_terms
+        term_map = {term.term_id: term for term in candidate_terms}
+        return [
+            TermResponse(
+                term_id=term.term_id, en=term.en, cn=term.cn, jp=term.jp)
+            for tid in unique_term_ids
+            if (term := term_map.get(tid)) is not None
+        ]
 
     except Exception as e:
         raise HTTPException(
@@ -139,39 +116,24 @@ async def search_similar_terms(
     try:
         matcher = get_term_matcher()
 
-        # 执行匹配
-        matched_term_ids = matcher.match_terms(
-            [query],
-            similarity_threshold=threshold,
-            top_k=top_k,
-            max_ngram=3
-        )
-
-        if not matched_term_ids or not matched_term_ids[0]:
-            return {
-                "query": query,
-                "results": [],
-                "total_results": 0
-            }
-
-        # 查询数据库获取术语详情
         db = next(get_db())
         try:
-            terms = db.query(Term).filter(
-                Term.term_id.in_(matched_term_ids[0])
-            ).all()
+            candidate_terms = db.query(Term).all()
         finally:
             db.close()
 
-        # 构建结果
-        results = []
-        for term in terms:
-            results.append({
-                "term_id": term.term_id,
-                "en": term.en,
-                "cn": term.cn,
-                "jp": term.jp
-            })
+        matched_term_ids = matcher.match_terms(
+            [query], candidate_terms, top_k=top_k)
+
+        if not matched_term_ids or not matched_term_ids[0]:
+            return {"query": query, "results": [], "total_results": 0}
+
+        term_map = {term.term_id: term for term in candidate_terms}
+        results = [
+            {"term_id": t.term_id, "en": t.en, "cn": t.cn, "jp": t.jp}
+            for tid in matched_term_ids[0]
+            if (t := term_map.get(tid)) is not None
+        ]
 
         return {
             "query": query,
@@ -591,19 +553,18 @@ async def test_term_match(
     try:
         matcher = get_term_matcher()
 
-        # 执行匹配
-        results = matcher.match_terms(
-            [text],
-            similarity_threshold=similarity_threshold,
-            top_k=top_k,
-            max_ngram=3
-        )
+        db = next(get_db())
+        try:
+            candidate_terms = db.query(Term).all()
+        finally:
+            db.close()
+
+        results = matcher.match_terms([text], candidate_terms, top_k=top_k)
 
         return {
             "test_text": text,
             "matched_term_ids": results[0] if results else [],
             "total_matches": len(results[0]) if results else 0,
-            "performance_stats": matcher.get_stats()['performance_stats']
         }
 
     except Exception as e:
