@@ -98,3 +98,37 @@ class LokaliseKey(Base):
         Index('idx_is_single_word', 'is_single_word'),
         Index('idx_project_single_word', 'project_id', 'is_single_word'),
     )
+
+
+class LokaliseTag(Base):
+    """Lokalise Tag 数据表 - 独立维护，不与其他表关联"""
+    __tablename__ = "lokalise_tags"
+    
+    # 主键：自增ID
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键ID")
+    
+    # 标签名称
+    tag_name = Column(String(255), nullable=False, comment="标签名称")
+    
+    # 项目ID
+    project_id = Column(String(100), nullable=False, comment="项目ID")
+    
+    # 使用次数
+    usage_count = Column(Integer, default=0, nullable=False, comment="使用次数")
+    
+    # 最后使用时间（用于自动补全排序，优先显示最近使用的tags）
+    last_used_at = Column(TIMESTAMP, nullable=True, comment="最后使用时间")
+    
+    # 创建时间
+    created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间")
+    
+    # 更新时间
+    updated_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"), comment="更新时间")
+    
+    # 创建索引
+    __table_args__ = (
+        Index('idx_project_id', 'project_id'),
+        Index('idx_tag_name', 'tag_name'),
+        Index('idx_project_tag', 'project_id', 'tag_name'),
+        Index('uk_tag_project', 'tag_name', 'project_id', unique=True),  # 唯一索引：同一项目下tag名称唯一
+    )

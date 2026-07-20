@@ -1,0 +1,15 @@
+{
+  "name": "mcp-lokalise",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone MCP server for Lokalise and extension backend APIs",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "start:stdio": "node src/index.js",
+    "start:http": "MCP_HTTP_PORT=3100 node src/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0"
+  }
+}

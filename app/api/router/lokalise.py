@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Request, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, desc, asc
 from typing import Dict, Any
 import logging
 import re
 from datetime import datetime
 
 from app.db.database import get_db
-from app.models.models import LokaliseKey
+from app.models.models import LokaliseKey, LokaliseTag
 from app.models.schemas import (
     LokaliseKeyCreate, 
     LokaliseKeyUpdate, 
@@ -46,6 +46,59 @@ def is_single_word_key(key_name: str) -> bool:
     # 匹配模式：^[a-zA-Z0-9]+$ 且长度大于0
     pattern = r'^[a-zA-Z0-9]+$'
     return bool(re.match(pattern, key_name))
+
+
+def sync_tags(db: Session, project_id: str, tags: list, increment: bool = True):
+    """
+    同步tag表：更新tags的使用次数和最后使用时间
+    
+    Args:
+        db: 数据库会话
+        project_id: 项目ID
+        tags: tag列表
+        increment: True表示增加计数，False表示减少计数
+    """
+    if not tags or not isinstance(tags, list):
+        return
+    
+    delta = 1 if increment else -1
+    current_time = datetime.now()
+    
+    for tag in tags:
+        if not tag or not isinstance(tag, str) or not tag.strip():
+            continue
+        
+        tag_name = tag.strip()
+        
+        try:
+            # 查找或创建tag记录
+            existing_tag = db.query(LokaliseTag).filter(
+                LokaliseTag.tag_name == tag_name,
+                LokaliseTag.project_id == project_id
+            ).first()
+            
+            if existing_tag:
+                # 更新使用次数
+                new_count = existing_tag.usage_count + delta
+                if new_count < 0:
+                    new_count = 0  # 防止负数
+                existing_tag.usage_count = new_count
+                # 更新最后使用时间（只在increment时更新）
+                if increment:
+                    existing_tag.last_used_at = current_time
+            else:
+                # 创建新tag记录（只在increment时创建）
+                if increment:
+                    new_tag = LokaliseTag(
+                        tag_name=tag_name,
+                        project_id=project_id,
+                        usage_count=1,
+                        last_used_at=current_time
+                    )
+                    db.add(new_tag)
+        except Exception as e:
+            logger.error(f"同步tag失败: project_id={project_id}, tag_name={tag_name}, error={str(e)}")
+            # 继续处理其他tags，不中断流程
 
 
 @router.get("/")
@@ -164,6 +217,11 @@ async def handle_key_added(db: Session, key_data: Dict[str, Any], project_data: 
         db.commit()
         db.refresh(new_key)
         
+        # 同步tag表：增加tags的使用次数
+        if tags:
+            sync_tags(db, project_id, tags, increment=True)
+            db.commit()
+        
         logger.info(f"Successfully added key {key_id}: {key_name}")
         return LokaliseWebhookResponse(
             success=True,
@@ -226,6 +284,10 @@ async def handle_keys_added(db: Session, keys_data: list, project_data: Dict[str
                     
                     db.add(new_key)
                     added_count += 1
+                    
+                    # 同步tag表：增加tags的使用次数
+                    if tags:
+                        sync_tags(db, project_id, tags, increment=True)
         
         # 提交所有添加操作
         db.commit()
@@ -282,11 +344,20 @@ async def handle_keys_modified(db: Session, keys_data: list, project_data: Dict[
                 ).first()
                 
                 if existing_key:
+                    # 获取旧的tags，用于同步tag表
+                    old_tags = existing_key.tags if existing_key.tags else []
+                    
                     # 更新字段
                     existing_key.key_name = key_name
                     existing_key.tags = tags
                     existing_key.project_name = project_name
                     existing_key.is_single_word = is_single_word_key(key_name)
+                    
+                    # 同步tag表：减少旧tags的计数，增加新tags的计数
+                    if old_tags:
+                        sync_tags(db, project_id, old_tags, increment=False)
+                    if tags:
+                        sync_tags(db, project_id, tags, increment=True)
                     
                     modified_count += 1
                 else:
@@ -339,6 +410,9 @@ async def handle_key_modified(db: Session, key_data: Dict[str, Any], project_dat
                 project_id=project_id
             )
         
+        # 获取旧的tags，用于同步tag表
+        old_tags = existing_key.tags if existing_key.tags else []
+        
         # 更新字段
         existing_key.key_name = key_name
         existing_key.tags = tags
@@ -347,6 +421,13 @@ async def handle_key_modified(db: Session, key_data: Dict[str, Any], project_dat
         
         db.commit()
         db.refresh(existing_key)
+        
+        # 同步tag表：减少旧tags的计数，增加新tags的计数
+        if old_tags:
+            sync_tags(db, project_id, old_tags, increment=False)
+        if tags:
+            sync_tags(db, project_id, tags, increment=True)
+        db.commit()
         
         logger.info(f"Successfully updated key {key_id}: {key_name}")
         return LokaliseWebhookResponse(
@@ -389,10 +470,16 @@ async def handle_keys_deleted(db: Session, key_data: Dict[str, Any], keys_data: 
                     
                     
                     if existing_key:
-                        # 硬删除（物理删除）
+                        # 获取tags，用于同步tag表
+                        tags = existing_key.tags if existing_key.tags else []
                         
+                        # 硬删除（物理删除）
                         db.delete(existing_key)
                         deleted_count += 1
+                        
+                        # 同步tag表：减少tags的使用次数
+                        if tags:
+                            sync_tags(db, project_id, tags, increment=False)
                         
                         logger.info(f"Successfully deleted key {key_id}")
                     else:
@@ -801,29 +888,39 @@ async def autocomplete_tags(
     db: Session = Depends(get_db)
 ):
     """
-    Tag自动完成查询接口 - 根据tag进行模糊搜索
+    Tag自动完成查询接口 - 智能匹配tag名称，优先显示最近使用的tags
+    
+    匹配逻辑（优先级从高到低）:
+    1. 前缀匹配：输入"comm"会优先匹配"common1"、"common"等以"comm"开头的tag
+    2. 包含匹配：如果前缀匹配不足，会匹配包含查询字符串的tag（如"comm"匹配"mycommon"）
+    3. 排序规则：
+       - 前缀匹配 > 包含匹配
+       - 完全匹配优先
+       - 最近使用的tags优先（last_used_at降序）
+       - 然后按使用频率（usage_count降序）
+       - 最后按tag名称排序
     
     查询参数:
     - project_id: 项目ID
-    - query: 搜索关键词
-    - limit: 返回结果数量限制，默认5个
+    - query: 搜索关键词（不区分大小写）
+    - limit: 返回结果数量限制，默认5个，最大20个
     
     示例:
-    GET /lokalise/autocomplete/tags?project_id=project123&query=Auto&limit=5
+    GET /lokalise/autocomplete/tags?project_id=project123&query=comm&limit=5
     
     返回:
     {
         "success": true,
-        "message": "Found 2 results",
+        "message": "Found 2 tag(s)",
         "total_found": 2,
         "results": [
             {
-                "tag": "Automation",
-                "count": 5
+                "tag": "common1",
+                "count": 10
             },
             {
-                "tag": "AutoComplete",
-                "count": 3
+                "tag": "common",
+                "count": 5
             }
         ]
     }
@@ -838,45 +935,106 @@ async def autocomplete_tags(
             )
         
         # 清理查询字符串
-        query = query.strip()
+        query = query.strip().lower()
         limit = min(limit, 20)  # 限制最大返回数量为20，提升性能
         
-        # 优化：只查询包含匹配tag的keys，减少内存使用
-        # 使用JSON_SEARCH函数进行更高效的JSON搜索
-        keys = db.query(LokaliseKey).filter(
-            and_(
-                LokaliseKey.project_id == project_id,
-                # 使用JSON_SEARCH查找包含查询字符串的tag
-                f"JSON_SEARCH(tags, 'one', '%{query}%') IS NOT NULL"
-            )
-        ).limit(100).all()  # 限制查询数量，提升性能
+        # 使用tag表进行高效查询，按最近使用时间排序
+        # 1. 前缀匹配（最高优先级）- 使用SQL LIKE查询，按最近使用时间降序
+        # 使用CASE WHEN处理NULL值，确保有last_used_at的排在前面
+        from sqlalchemy import case
+        prefix_tags = db.query(LokaliseTag).filter(
+            LokaliseTag.project_id == project_id,
+            LokaliseTag.tag_name.like(f"{query}%")
+        ).order_by(
+            case((LokaliseTag.last_used_at.is_(None), 1), else_=0),  # NULL值排在后面
+            desc(LokaliseTag.last_used_at),  # 最近使用的优先
+            desc(LokaliseTag.usage_count),  # 然后按使用频率
+            asc(LokaliseTag.tag_name)  # 最后按名称排序
+        ).all()
         
-        # 收集匹配的tags并统计
-        tag_counts = {}
-        for key in keys:
-            if key.tags:
-                for tag in key.tags:
-                    if query.lower() in tag.lower():
-                        tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        # 2. 包含匹配（次优先级）- 如果前缀匹配不足，再查询包含匹配
+        contains_tags = []
+        if len(prefix_tags) < limit:
+            # 获取已匹配的前缀tag名称（用于排除）
+            prefix_tag_names = {tag.tag_name for tag in prefix_tags}
+            
+            # 使用SQL LIKE查询包含匹配（排除已匹配的前缀），按最近使用时间排序
+            all_contains_tags = db.query(LokaliseTag).filter(
+                LokaliseTag.project_id == project_id,
+                LokaliseTag.tag_name.like(f"%{query}%")
+            ).order_by(
+                case((LokaliseTag.last_used_at.is_(None), 1), else_=0),  # NULL值排在后面
+                desc(LokaliseTag.last_used_at),  # 最近使用的优先
+                desc(LokaliseTag.usage_count),  # 然后按使用频率
+                asc(LokaliseTag.tag_name)  # 最后按名称排序
+            ).all()
+            
+            # 在Python中过滤掉前缀匹配的tags
+            contains_tags = [tag for tag in all_contains_tags if tag.tag_name not in prefix_tag_names]
         
-        # 转换为响应格式并按使用次数排序
+        # 智能匹配和排序逻辑
+        prefix_matches = []  # 前缀匹配的tags
+        contains_matches = []  # 包含匹配的tags
+        
+        for tag in prefix_tags:
+            tag_lower = tag.tag_name.lower()
+            is_exact_match = (tag_lower == query)
+            prefix_matches.append({
+                'tag': tag.tag_name,
+                'count': tag.usage_count,
+                'is_exact': is_exact_match,
+                'length': len(tag.tag_name),
+                'last_used_at': tag.last_used_at  # 保留最后使用时间用于排序
+            })
+        
+        for tag in contains_tags:
+            tag_lower = tag.tag_name.lower()
+            # 计算匹配位置分数（越靠前越好）
+            position = tag_lower.find(query)
+            position_score = 1.0 / (position + 1) if position >= 0 else 0
+            contains_matches.append({
+                'tag': tag.tag_name,
+                'count': tag.usage_count,
+                'position_score': position_score,
+                'length': len(tag.tag_name),
+                'last_used_at': tag.last_used_at  # 保留最后使用时间用于排序
+            })
+        
+        # 排序逻辑（已通过SQL排序，这里主要是为了完全匹配优先）：
+        # 前缀匹配：完全匹配优先，然后保持SQL排序（最近使用 > 使用频率 > 名称）
+        prefix_matches.sort(key=lambda x: (
+            not x['is_exact'],  # 完全匹配优先（False < True）
+            x['last_used_at'] is None,  # 有使用时间的优先
+            -(x['last_used_at'].timestamp() if x['last_used_at'] else 0),  # 最近使用的优先
+            -x['count'],  # 使用频率
+            x['length']  # 长度
+        ))
+        
+        # 包含匹配：保持SQL排序（最近使用 > 使用频率 > 名称），但考虑匹配位置
+        contains_matches.sort(key=lambda x: (
+            -x['position_score'],  # 匹配位置优先
+            x['last_used_at'] is None,  # 有使用时间的优先
+            -(x['last_used_at'].timestamp() if x['last_used_at'] else 0),  # 最近使用的优先
+            -x['count'],  # 使用频率
+            x['length']  # 长度
+        ))
+        
+        # 合并结果：前缀匹配优先，然后是包含匹配
+        sorted_tags = prefix_matches + contains_matches
+        
+        # 转换为响应格式
         results = []
-        for tag, count in tag_counts.items():
+        for item in sorted_tags[:limit]:
             result = TagAutocompleteResult(
-                tag=tag,
-                count=count
+                tag=item['tag'],
+                count=item['count']
             )
             results.append(result)
         
-        # 按使用次数降序排序，然后按tag名称排序
-        results.sort(key=lambda x: (-x.count, x.tag.lower()))
-        
-        # 限制返回数量
-        results = results[:limit]
-        
+        total_matched = len(prefix_matches) + len(contains_matches)
         message = f"Found {len(results)} tag(s)"
-        if len(tag_counts) > limit:
-            message += f" (limited to {limit})"
+        if total_matched > limit:
+            message += f" (showing top {limit} of {total_matched} matches)"
         
         logger.info(f"Tag autocomplete search completed: {len(results)} results for query '{query}'")
         

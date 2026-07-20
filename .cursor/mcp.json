@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "mcp-lokalise": {
+      "command": "node",
+      "args": ["mcp/lokalise/src/index.js"],
+      "env": {
+        "LOKALISE_API_TOKEN": "",
+        "EXTENSION_BACKEND_BASE_URL": "http://43.142.250.179:8000"
+      }
+    }
+  }
+}
