@@ -57,27 +57,38 @@ def sync_tags(db: Session, project_id: str, tags: list, increment: bool = True):
         project_id: 项目ID
         tags: tag列表
         increment: True表示增加计数，False表示减少计数
+
+    Note:
+        Session 使用 autoflush=False。同一事务内多个 key 共享新 tag 时，
+        若每次都 INSERT，会在 commit 时触发 uk_tag_project 唯一约束冲突，
+        导致整批 keys 回滚。因此用 session 级缓存保证每个 tag 只创建一次。
     """
     if not tags or not isinstance(tags, list):
         return
     
     delta = 1 if increment else -1
     current_time = datetime.now()
+    # 同一 DB session / 事务内复用，避免批量 webhook 重复 INSERT 同一 tag
+    tag_cache: Dict[tuple, LokaliseTag] = db.info.setdefault('_lokalise_tag_cache', {})
     
     for tag in tags:
         if not tag or not isinstance(tag, str) or not tag.strip():
             continue
         
         tag_name = tag.strip()
+        cache_key = (project_id, tag_name)
         
         try:
-            # 查找或创建tag记录
-            existing_tag = db.query(LokaliseTag).filter(
-                LokaliseTag.tag_name == tag_name,
-                LokaliseTag.project_id == project_id
-            ).first()
+            existing_tag = tag_cache.get(cache_key)
+            if existing_tag is None:
+                existing_tag = db.query(LokaliseTag).filter(
+                    LokaliseTag.tag_name == tag_name,
+                    LokaliseTag.project_id == project_id
+                ).first()
+                if existing_tag is not None:
+                    tag_cache[cache_key] = existing_tag
             
-            if existing_tag:
+            if existing_tag is not None:
                 # 更新使用次数
                 new_count = existing_tag.usage_count + delta
                 if new_count < 0:
@@ -96,6 +107,7 @@ def sync_tags(db: Session, project_id: str, tags: list, increment: bool = True):
                         last_used_at=current_time
                     )
                     db.add(new_tag)
+                    tag_cache[cache_key] = new_tag
         except Exception as e:
             logger.error(f"同步tag失败: project_id={project_id}, tag_name={tag_name}, error={str(e)}")
             # 继续处理其他tags，不中断流程
@@ -134,6 +146,18 @@ async def webhook(request: Request, db: Session = Depends(get_db)):
     try:
         # 获取并解析JSON请求体
         data = await request.json()
+    except Exception as json_error:
+        logger.error(f"Error parsing JSON: {str(json_error)}")
+        # JSON解析失败也返回200，避免Lokalise重试
+        return LokaliseWebhookResponse(
+            success=False,
+            message=f"Invalid JSON format: {str(json_error)}",
+            event_type='unknown',
+            key_id=None,
+            project_id=None
+        )
+
+    try:
         logger.info(f"Received webhook: {data}")
         
         event = data.get('event', '')
@@ -166,15 +190,15 @@ async def webhook(request: Request, db: Session = Depends(get_db)):
         logger.info(f"Successfully processed webhook event: {event}")
         return result
         
-    except Exception as json_error:
-        logger.error(f"Error parsing JSON: {str(json_error)}")
-        # JSON解析失败也返回200，避免Lokalise重试
+    except Exception as e:
+        logger.error(f"Error processing webhook: {str(e)}")
+        # 仍返回200，避免Lokalise无限重试；但不再误报为 JSON 解析失败
         return LokaliseWebhookResponse(
             success=False,
-            message=f"Invalid JSON format: {str(json_error)}",
-            event_type='unknown',
+            message=f"Webhook processing failed: {str(e)}",
+            event_type=data.get('event', 'unknown') if isinstance(data, dict) else 'unknown',
             key_id=None,
-            project_id=None
+            project_id=(data.get('project') or {}).get('id') if isinstance(data, dict) else None
         )
 
 

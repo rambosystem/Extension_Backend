@@ -12,8 +12,8 @@ Environment=PATH=/home/ubuntu/project/extension_backend/venv/bin
 Environment=PYTHONPATH=/home/ubuntu/project/extension_backend
 Environment=ENVIRONMENT=production
 
-# 启动命令
-ExecStart=/home/ubuntu/project/extension_backend/venv/bin/gunicorn app.main:app \
+# 启动命令（通过 python3 调用，避免 ProtectHome 下无法执行 /home 内脚本）
+ExecStart=/home/ubuntu/project/extension_backend/venv/bin/python3 -m gunicorn app.main:app \
     --config gunicorn.conf.py \
     --pid /tmp/extension_backend.pid \
     --daemon
@@ -37,7 +37,7 @@ StartLimitBurst=3
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=false
 ReadWritePaths=/var/log/extension_backend /tmp /home/ubuntu/project/extension_backend
 
 # 日志设置
