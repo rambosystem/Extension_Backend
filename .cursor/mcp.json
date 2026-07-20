@@ -4,7 +4,7 @@
       "command": "node",
       "args": ["mcp/lokalise/src/index.js"],
       "env": {
-        "LOKALISE_API_TOKEN": "",
+        "LOKALISE_API_TOKEN": "26a3ed10cae13ffc3dcafc690d0a8550b0fbaf31",
         "EXTENSION_BACKEND_BASE_URL": "http://43.142.250.179:8000"
       }
     }
