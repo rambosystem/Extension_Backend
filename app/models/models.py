@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, TIMESTAMP, Boolean, ForeignKey, text, BigInteger, DateTime, JSON, Index
+from sqlalchemy import Column, Integer, String, Text, TIMESTAMP, Boolean, ForeignKey, text, BigInteger, JSON, Index
 from sqlalchemy.orm import relationship
 from app.db.database import Base
 
@@ -22,7 +22,6 @@ class User(Base):
 
     # 关系映射
     terms = relationship("Term", back_populates="user")
-    embeddings = relationship("Embedding", back_populates="user")
 
 
 class Term(Base):
@@ -52,22 +51,6 @@ class Term(Base):
         Index('idx_created_at', 'created_at'),
         Index('idx_user_en', 'user_id', 'en'),
     )
-
-
-class Embedding(Base):
-    __tablename__ = "embedding"
-
-    id = Column(BigInteger, primary_key=True,
-                autoincrement=True, comment="主键ID")
-    user_id = Column(Integer, ForeignKey(
-        "users.user_id", ondelete="CASCADE"), nullable=False, comment="关联用户的外键")
-    embedding_status = Column(String(20), nullable=False,
-                              default="pending", comment="embedding状态：building-构建中, completed-成功, failed-失败")
-    last_embedding_time = Column(DateTime, nullable=True,
-                                 comment="最后成功构建embedding的时间")
-
-    # 关系映射
-    user = relationship("User", back_populates="embeddings")
 
 
 class LokaliseKey(Base):

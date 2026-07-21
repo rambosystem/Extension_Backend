@@ -18,30 +18,15 @@ class Settings(BaseSettings):
     DB_PASSWORD: str = "Wx19971009."
     DB_NAME: str = "edge_extension_db"
 
-    # BGE-M3 Embedding配置 - 离线模式
-    EMBEDDING_MODEL: str = "BAAI/bge-m3"
-    EMBEDDING_DEVICE: str = "cpu"
-    EMBEDDING_BATCH_SIZE: int = 32
-    EMBEDDING_MAX_LENGTH: int = 512
-
-    # 离线模型配置
-    TRANSFORMERS_OFFLINE: bool = True
-    HF_HUB_OFFLINE: bool = True
-    HF_ENDPOINT: str = "https://hf-mirror.com"
-    MODEL_CACHE_DIR: str = "./model_cache"
-
-    # FAISS向量持久化配置
-    FAISS_INDEX_PATH: str = "./faiss_indexes"
-    FAISS_INDEX_TYPE: str = "IndexFlatIP"
-    VECTOR_PERSISTENCE_ENABLED: bool = True
-    AUTO_SAVE_INTERVAL: int = 100  # 每100次操作自动保存
-
     @property
     def database_url(self) -> str:
         return f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 
     class Config:
         env_file = ".env"
+        # 忽略 .env 中的遗留/无关变量（如已废弃的 EMBEDDING_* / FAISS_* 配置），
+        # 避免部署环境残留旧键导致启动校验失败
+        extra = "ignore"
 
 
 settings = Settings()

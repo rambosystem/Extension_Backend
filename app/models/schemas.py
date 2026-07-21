@@ -41,20 +41,6 @@ class TermsStatusResponse(BaseModel):
     total_terms: int
 
 
-class EmbeddingStatusResponse(BaseModel):
-    user_id: int
-    embedding_status: str
-    last_embedding_time: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
-
-
-class EmbeddingUpdateRequest(BaseModel):
-    embedding_status: str
-    last_embedding_time: Optional[datetime] = None
-
-
 # Lokalise相关模型
 class LokaliseKeyCreate(BaseModel):
     """创建 Lokalise Key 模型"""

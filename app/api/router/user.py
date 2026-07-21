@@ -1,10 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.database import get_db
-from app.models.models import User, Term, Embedding
-from app.models.schemas import UserTermsResponse, TermCreate, DeleteTermResponse, DeleteTermsResponse, DeleteTermsRequest, TermsStatusResponse, EmbeddingStatusResponse, EmbeddingUpdateRequest
+from app.models.models import User, Term
+from app.models.schemas import UserTermsResponse, TermCreate, DeleteTermResponse, DeleteTermsResponse, DeleteTermsRequest, TermsStatusResponse
 from typing import List
-from datetime import datetime
 
 router = APIRouter(prefix="/users", tags=["users"])
 

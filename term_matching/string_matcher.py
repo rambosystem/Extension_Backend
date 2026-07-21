@@ -28,14 +28,6 @@ def normalize(text: str) -> str:
     return _NON_WORD.sub(" ", text.lower()).strip()
 
 
-class _NoIndexManager:
-    """兼容旧 faiss_manager 接口的空壳（已无 FAISS 索引）"""
-    term_id_to_index = {}
-
-    def is_index_loaded(self) -> bool:
-        return False
-
-
 class StringTermMatcher:
     """基于正则整词匹配的术语匹配器（无模型、无 FAISS）"""
 
@@ -44,30 +36,7 @@ class StringTermMatcher:
         self._cache_key = None
         self._pattern = None
         self._norm_to_ids = {}
-        # 兼容旧路由中对 matcher.faiss_manager 的属性访问
-        self.faiss_manager = _NoIndexManager()
         logger.info("StringTermMatcher initialized (no model, no FAISS)")
-
-    # ---- 兼容旧接口的空操作（匹配已实时读 DB，无需维护索引） ----
-    def remove_terms_from_index(self, *args, **kwargs) -> None:
-        """兼容旧调用：实时匹配无需维护索引，空操作。"""
-        return None
-
-    def add_terms_to_index(self, *args, **kwargs) -> None:
-        """兼容旧调用：实时匹配无需维护索引，空操作。"""
-        return None
-
-    def build_index_from_terms(self, *args, **kwargs) -> None:
-        """兼容旧调用：实时匹配无需预建索引，空操作。"""
-        return None
-
-    def get_stats(self, *args, **kwargs) -> dict:
-        """兼容旧接口：返回匹配器说明信息。"""
-        return {"engine": "string-match", "model": None, "faiss": False}
-
-    def get_index_stats(self, *args, **kwargs) -> dict:
-        """兼容旧接口：无 FAISS 索引。"""
-        return {"engine": "string-match", "total_vectors": 0, "faiss": False}
 
     def _build(self, terms: List[Tuple[int, str]]) -> None:
         """根据术语列表构建正则匹配器（按签名缓存，避免重复编译）"""

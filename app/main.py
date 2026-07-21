@@ -7,8 +7,8 @@ from app.api.router import lokalise
 
 # 创建FastAPI应用实例
 app = FastAPI(
-    title="FAISS Vector Search API",
-    description="基于FAISS的向量搜索API",
+    title="Extension Backend API",
+    description="术语匹配 / Lokalise Key 管理后端 API",
     version="1.0.0",
     debug=settings.DEBUG
 )
@@ -33,7 +33,7 @@ app.include_router(lokalise.router)
 @app.get("/")
 async def root():
     return {
-        "message": "FAISS Vector Search API is running!",
+        "message": "Extension Backend API is running!",
         "version": "1.0.0",
         "docs_url": "/docs"
     }
@@ -45,6 +45,5 @@ async def root():
 async def health_check():
     return {
         "status": "healthy",
-        "database": "connected",
-        "faiss_engine": "ready"
+        "database": "connected"
     }
