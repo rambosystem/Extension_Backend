@@ -1,21 +1,13 @@
-import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-from dotenv import load_dotenv
+from app.config import settings
 
-load_dotenv()  # 读取 .env 文件
-
-DB_USER = os.getenv("DB_USER", "rambo")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "Wx19971009.")
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = os.getenv("DB_PORT", "2069")
-DB_NAME = os.getenv("DB_NAME", "edge_extension_db")
-
-DB_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-
-engine = create_engine(DB_URL, pool_pre_ping=True)
+# 数据库连接串统一由 app.config.settings 提供（从环境变量 / .env 读取，
+# 密码等敏感信息不在源码中保留明文）
+engine = create_engine(settings.database_url, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
 
 # 依赖注入：获取数据库会话
 def get_db():

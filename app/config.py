@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     DB_HOST: str = "localhost"
     DB_PORT: int = 2069
     DB_USER: str = "rambo"
-    DB_PASSWORD: str = "Wx19971009."
+    DB_PASSWORD: str  # 必填，从环境变量 / .env 读取，不在源码中保留明文
     DB_NAME: str = "edge_extension_db"
 
     @property
